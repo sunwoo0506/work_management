@@ -576,7 +576,9 @@ git commit -m "feat: Supabase 클라이언트와 DB 타입 생성"
 import { describe, it, expect } from 'vitest'
 import { daysUntil, scheduleOf, ddayLabel } from '../dday'
 
-const TODAY = new Date('2026-08-11T09:00:00+09:00')
+// 로컬 벽시계 기준. ISO 문자열(절대 시각)로 바꾸면 UTC 오프셋이 음수인 지역에서
+// 하루가 밀려 깨진다. 구현이 로컬 달력일을 비교하기 때문이다.
+const TODAY = new Date(2026, 7, 11, 9, 0)
 
 describe('daysUntil', () => {
   it('오늘이면 0', () => {
@@ -589,7 +591,7 @@ describe('daysUntil', () => {
     expect(daysUntil('2026-08-10', TODAY)).toBe(-1)
   })
   it('시각이 늦어도 날짜만 본다', () => {
-    expect(daysUntil('2026-08-11', new Date('2026-08-11T23:59:00+09:00'))).toBe(0)
+    expect(daysUntil('2026-08-11', new Date(2026, 7, 11, 23, 59))).toBe(0)
   })
   it('기한이 없으면 null', () => {
     expect(daysUntil(null, TODAY)).toBeNull()
@@ -706,7 +708,7 @@ export function ddayLabel(d: number | null): string {
 - [ ] **Step 5: 통과 확인**
 
 Run: `cd frontend && npm test`
-Expected: PASS — 15개 테스트 통과.
+Expected: PASS — 16개 테스트 통과.
 
 - [ ] **Step 6: 커밋**
 
@@ -731,7 +733,8 @@ git commit -m "feat(domain): D-day와 일정 상태 계산"
 import { describe, it, expect } from 'vitest'
 import { sortTasks } from '../sort'
 
-const TODAY = new Date('2026-08-11T09:00:00+09:00')
+// 로컬 벽시계 기준. dday.test.ts와 같은 이유로 ISO 문자열을 쓰지 않는다.
+const TODAY = new Date(2026, 7, 11, 9, 0)
 
 const t = (id: string, priority: string, due: string | null) => ({
   id, priority, due_date: due, status: '할 일',
@@ -816,7 +819,7 @@ export function sortTasks<T extends Sortable>(rows: readonly T[], today: Date): 
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd frontend && npm test`
-Expected: PASS — 21개 테스트 통과.
+Expected: PASS — 22개 테스트 통과.
 
 - [ ] **Step 5: 커밋**
 
@@ -952,7 +955,7 @@ export function rollupByDirective(
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd frontend && npm test`
-Expected: PASS — 27개 테스트 통과.
+Expected: PASS — 28개 테스트 통과.
 
 - [ ] **Step 5: 커밋**
 
@@ -1092,7 +1095,7 @@ export function toTaskInsert(item: InboxLike, choice: PromoteChoice): TaskInsert
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd frontend && npm test`
-Expected: PASS — 34개 테스트 통과.
+Expected: PASS — 35개 테스트 통과.
 
 - [ ] **Step 5: 커밋**
 
@@ -2926,7 +2929,7 @@ npx tsc --noEmit
 npm run build
 ```
 
-Expected: 테스트 34개 통과, 타입 오류 없음, 빌드 성공.
+Expected: 테스트 35개 통과, 타입 오류 없음, 빌드 성공.
 
 - [ ] **Step 2: 수용 기준 확인**
 
