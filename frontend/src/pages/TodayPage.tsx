@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Card, EmptyState, LaterNote, PageHeader, StatTile } from '../components/ui'
+import { Card, EmptyState, PageHeader, StatTile } from '../components/ui'
 import { PriorityBadge, ScheduleBadge, SourceBadge } from '../components/Badge'
 import { daysUntil, ddayLabel, scheduleOf } from '../domain/dday'
 import { sortTasks } from '../domain/sort'
@@ -13,6 +13,7 @@ import { useDirectives } from '../features/directives/hooks'
 import { useLastPeriods, useProcedures } from '../features/procedures/hooks'
 import { triggerOf } from '../features/procedures/api'
 import { isDue } from '../domain/trigger'
+import YesterdayCard from '../features/daily/YesterdayCard'
 import TaskDetail from '../features/tasks/TaskDetail'
 import SampleDataButton from '../features/seed/SampleDataButton'
 import { SAMPLE_MARK } from '../features/seed/sampleData'
@@ -95,11 +96,7 @@ export default function TodayPage() {
         <div className="grid grid-cols-[1fr_320px] gap-5 mt-5 items-start">
           {/* 왼쪽 — 하루의 순서 */}
           <div className="space-y-5">
-            <Card title="어제 이야기">
-              <LaterNote stage={4}>
-                업무일지를 만들면 전날의 「이슈·막힌 것」과 완료한 업무가 여기 올라옵니다.
-              </LaterNote>
-            </Card>
+            <YesterdayCard today={today} />
 
             <Card
               title="오늘 할 일"

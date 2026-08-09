@@ -142,6 +142,56 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_logs: {
+        Row: {
+          closed_at: string | null
+          company_id: string
+          created_at: string
+          id: string
+          issues: string | null
+          log_date: string
+          memo: string | null
+          snapshot: Json
+          spent_min: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          closed_at?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          issues?: string | null
+          log_date: string
+          memo?: string | null
+          snapshot?: Json
+          spent_min?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          closed_at?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          issues?: string | null
+          log_date?: string
+          memo?: string | null
+          snapshot?: Json
+          spent_min?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       directives: {
         Row: {
           area: string | null
@@ -348,6 +398,70 @@ export type Database = {
           },
           {
             foreignKeyName: "inbox_promoted_task_id_fkey"
+            columns: ["promoted_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      log_todos: {
+        Row: {
+          company_id: string
+          created_at: string
+          daily_log_id: string
+          id: string
+          priority: string
+          promote: boolean
+          promoted_task_id: string | null
+          sort_order: number
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          daily_log_id: string
+          id?: string
+          priority?: string
+          promote?: boolean
+          promoted_task_id?: string | null
+          sort_order?: number
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          daily_log_id?: string
+          id?: string
+          priority?: string
+          promote?: boolean
+          promoted_task_id?: string | null
+          sort_order?: number
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "log_todos_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "log_todos_daily_log_id_fkey"
+            columns: ["daily_log_id"]
+            isOneToOne: false
+            referencedRelation: "daily_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "log_todos_promoted_task_id_fkey"
             columns: ["promoted_task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
