@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { daysUntil, scheduleOf, ddayLabel } from '../dday'
 
-const TODAY = new Date('2026-08-11T09:00:00+09:00')
+// 로컬 벽시계 기준. ISO 문자열(절대 시각)로 바꾸면 UTC 오프셋이 음수인 지역에서 하루가 밀려 깨진다.
+const TODAY = new Date(2026, 7, 11, 9, 0)
 
 describe('daysUntil', () => {
   it('오늘이면 0', () => {
@@ -14,7 +15,7 @@ describe('daysUntil', () => {
     expect(daysUntil('2026-08-10', TODAY)).toBe(-1)
   })
   it('시각이 늦어도 날짜만 본다', () => {
-    expect(daysUntil('2026-08-11', new Date('2026-08-11T23:59:00+09:00'))).toBe(0)
+    expect(daysUntil('2026-08-11', new Date(2026, 7, 11, 23, 59))).toBe(0)
   })
   it('기한이 없으면 null', () => {
     expect(daysUntil(null, TODAY)).toBeNull()
