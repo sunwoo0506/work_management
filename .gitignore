@@ -37,3 +37,7 @@ node_modules/
 dist/
 .env.local
 .env.*.local
+
+# Supabase CLI 임시 파일 — 연결 정보와 원격 버전 캐시. 사람마다 다르다
+supabase/.temp/
+supabase/.branches/
