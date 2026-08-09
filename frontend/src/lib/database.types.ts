@@ -234,6 +234,73 @@ export type Database = {
         }
         Relationships: []
       }
+      exceptions: {
+        Row: {
+          company_id: string
+          confirm: string
+          created_at: string
+          detected: string
+          explanation: string | null
+          id: string
+          reflected: boolean
+          rule: string
+          run_id: string
+          run_step_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          confirm?: string
+          created_at?: string
+          detected: string
+          explanation?: string | null
+          id?: string
+          reflected?: boolean
+          rule: string
+          run_id: string
+          run_step_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          confirm?: string
+          created_at?: string
+          detected?: string
+          explanation?: string | null
+          id?: string
+          reflected?: boolean
+          rule?: string
+          run_id?: string
+          run_step_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exceptions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exceptions_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exceptions_run_step_id_fkey"
+            columns: ["run_step_id"]
+            isOneToOne: false
+            referencedRelation: "run_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inbox: {
         Row: {
           company_id: string
@@ -288,6 +355,282 @@ export type Database = {
           },
         ]
       }
+      procedure_steps: {
+        Row: {
+          automatable: boolean
+          company_id: string
+          created_at: string
+          decision_rule: string | null
+          expected_min: number | null
+          id: string
+          needed_input: string | null
+          procedure_id: string
+          required: boolean
+          seq: number
+          title: string
+          updated_at: string
+          user_id: string
+          what_to_do: string | null
+        }
+        Insert: {
+          automatable?: boolean
+          company_id: string
+          created_at?: string
+          decision_rule?: string | null
+          expected_min?: number | null
+          id?: string
+          needed_input?: string | null
+          procedure_id: string
+          required?: boolean
+          seq: number
+          title: string
+          updated_at?: string
+          user_id: string
+          what_to_do?: string | null
+        }
+        Update: {
+          automatable?: boolean
+          company_id?: string
+          created_at?: string
+          decision_rule?: string | null
+          expected_min?: number | null
+          id?: string
+          needed_input?: string | null
+          procedure_id?: string
+          required?: boolean
+          seq?: number
+          title?: string
+          updated_at?: string
+          user_id?: string
+          what_to_do?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "procedure_steps_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "procedure_steps_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      procedures: {
+        Row: {
+          ai_delegation: string
+          area: string | null
+          code: string | null
+          company_id: string
+          created_at: string
+          id: string
+          inputs: Json
+          origin: string
+          outputs: Json
+          purpose: string | null
+          sort_order: number
+          status: string
+          title: string
+          trigger_rule: Json
+          trigger_type: string
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          ai_delegation?: string
+          area?: string | null
+          code?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          inputs?: Json
+          origin?: string
+          outputs?: Json
+          purpose?: string | null
+          sort_order?: number
+          status?: string
+          title: string
+          trigger_rule?: Json
+          trigger_type?: string
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          ai_delegation?: string
+          area?: string | null
+          code?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          inputs?: Json
+          origin?: string
+          outputs?: Json
+          purpose?: string | null
+          sort_order?: number
+          status?: string
+          title?: string
+          trigger_rule?: Json
+          trigger_type?: string
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "procedures_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      run_steps: {
+        Row: {
+          actual_min: number | null
+          company_id: string
+          created_at: string
+          done: boolean
+          done_at: string | null
+          human_intervened: boolean
+          id: string
+          note: string | null
+          output: string | null
+          procedure_step_id: string | null
+          run_id: string
+          seq: number
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          actual_min?: number | null
+          company_id: string
+          created_at?: string
+          done?: boolean
+          done_at?: string | null
+          human_intervened?: boolean
+          id?: string
+          note?: string | null
+          output?: string | null
+          procedure_step_id?: string | null
+          run_id: string
+          seq: number
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          actual_min?: number | null
+          company_id?: string
+          created_at?: string
+          done?: boolean
+          done_at?: string | null
+          human_intervened?: boolean
+          id?: string
+          note?: string | null
+          output?: string | null
+          procedure_step_id?: string | null
+          run_id?: string
+          seq?: number
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "run_steps_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "run_steps_procedure_step_id_fkey"
+            columns: ["procedure_step_id"]
+            isOneToOne: false
+            referencedRelation: "procedure_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "run_steps_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      runs: {
+        Row: {
+          company_id: string
+          created_at: string
+          finished_at: string | null
+          id: string
+          note: string | null
+          performer: string
+          period_label: string | null
+          procedure_id: string
+          result: string
+          seq: number
+          started_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          note?: string | null
+          performer?: string
+          period_label?: string | null
+          procedure_id: string
+          result?: string
+          seq: number
+          started_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          note?: string | null
+          performer?: string
+          period_label?: string | null
+          procedure_id?: string
+          result?: string
+          seq?: number
+          started_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "runs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "runs_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           area: string | null
@@ -300,11 +643,13 @@ export type Database = {
           id: string
           intake_channel: string | null
           priority: string
+          procedure_id: string | null
           progress: number
           reply_body: string | null
           reply_due: string | null
           requester: string | null
           requester_dept: string | null
+          run_id: string | null
           sort_order: number
           source: string
           start_date: string | null
@@ -324,11 +669,13 @@ export type Database = {
           id?: string
           intake_channel?: string | null
           priority?: string
+          procedure_id?: string | null
           progress?: number
           reply_body?: string | null
           reply_due?: string | null
           requester?: string | null
           requester_dept?: string | null
+          run_id?: string | null
           sort_order?: number
           source?: string
           start_date?: string | null
@@ -348,11 +695,13 @@ export type Database = {
           id?: string
           intake_channel?: string | null
           priority?: string
+          procedure_id?: string | null
           progress?: number
           reply_body?: string | null
           reply_due?: string | null
           requester?: string | null
           requester_dept?: string | null
+          run_id?: string | null
           sort_order?: number
           source?: string
           start_date?: string | null
@@ -374,6 +723,20 @@ export type Database = {
             columns: ["directive_id"]
             isOneToOne: false
             referencedRelation: "directives"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_procedure_id_fkey"
+            columns: ["procedure_id"]
+            isOneToOne: false
+            referencedRelation: "procedures"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
             referencedColumns: ["id"]
           },
         ]

@@ -31,6 +31,32 @@ export type DirectiveStatus = (typeof DIRECTIVE_STATUSES)[number]
 
 export type Schedule = '지연' | '임박' | '정상' | '완료' | '보류' | '기한없음'
 
+// ── 2단계: 절차와 실행이력 ────────────────────────────────
+
+/** 절차가 언제 시작되나. DB의 procedures.trigger_type check 제약과 같아야 한다. */
+export const TRIGGER_TYPES = ['일', '주', '월', '분기', '연', '이벤트', '수동'] as const
+
+/** 나중에 AI에게 넘길 때의 스위치 (설계서 §6.2) */
+export const AI_DELEGATIONS = ['사람만', 'AI 초안 → 내가 승인', 'AI 자동'] as const
+export type AiDelegation = (typeof AI_DELEGATIONS)[number]
+
+export const PROCEDURE_STATUSES = ['초안', '확정', '폐기'] as const
+export type ProcedureStatus = (typeof PROCEDURE_STATUSES)[number]
+
+export const RUN_RESULTS = ['진행중', '완료', '중단'] as const
+export type RunResult = (typeof RUN_RESULTS)[number]
+
+export const PERFORMERS = ['사람', 'AI', '혼합'] as const
+
+/** 예외 탐지 규칙 6종 (설계서 §5.4). 탐지 자체는 5단계에서 붙는다. */
+export const EXCEPTION_RULES = [
+  '단계 건너뜀', '단계 추가', '소요시간 이탈',
+  '산출물 누락', '사람 개입 증가', '순서 뒤바뀜',
+] as const
+export type ExceptionRule = (typeof EXCEPTION_RULES)[number]
+
+export const EXCEPTION_CONFIRMS = ['대기', '예외확정', '정상'] as const
+
 export const AREAS = [
   '인수인계', '품목·가격', '원가·단위', '재고', '축별손익',
   '현장손익', '자금·현금', '회계·세무', '회생지원', '데이터·지표', '보고·마감',

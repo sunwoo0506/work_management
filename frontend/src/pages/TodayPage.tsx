@@ -10,6 +10,9 @@ import type { TaskSource } from '../domain/types'
 import { useTasks } from '../features/tasks/hooks'
 import { useInbox } from '../features/inbox/hooks'
 import { useDirectives } from '../features/directives/hooks'
+import { useLastPeriods, useProcedures } from '../features/procedures/hooks'
+import { triggerOf } from '../features/procedures/api'
+import { isDue } from '../domain/trigger'
 import TaskDetail from '../features/tasks/TaskDetail'
 import SampleDataButton from '../features/seed/SampleDataButton'
 import { SAMPLE_MARK } from '../features/seed/sampleData'
@@ -25,6 +28,8 @@ export default function TodayPage() {
   const { data: tasks, isLoading } = useTasks()
   const { data: inbox } = useInbox()
   const { data: directives } = useDirectives()
+  const { data: procedures } = useProcedures()
+  const { data: lastPeriods } = useLastPeriods()
   const [open, setOpen] = useState<Task | null>(null)
 
   const today = new Date()
@@ -63,6 +68,11 @@ export default function TodayPage() {
 
   // 진행 중 업무 — 지시사항 단위로 묶는다. 업무가 붙은 것만 보인다
   const rollups = rollupByDirective(directives ?? [], live).filter((r) => r.totalCount > 0)
+
+  // 주기가 도래했고 이번 기간에 아직 안 돌린 절차
+  const dueProcedures = (procedures ?? []).filter(
+    (p) => p.status === '확정' && isDue(triggerOf(p), today, lastPeriods?.[p.id] ?? null),
+  )
 
   return (
     <div className="max-w-[1120px]">
@@ -197,10 +207,23 @@ export default function TodayPage() {
               )}
             </Card>
 
-            <Card title="절차 대기">
-              <LaterNote stage={2}>
-                주기가 도래한 절차가 여기 뜹니다. 반복업무가 이 자리에 들어옵니다.
-              </LaterNote>
+            <Card title="절차 대기" count={dueProcedures.length}>
+              {dueProcedures.length === 0 ? (
+                <p className="text-caption text-ink-mute py-2">
+                  지금 도래한 절차가 없습니다.
+                </p>
+              ) : (
+                <ul className="space-y-2.5">
+                  {dueProcedures.map((p) => (
+                    <li key={p.id}>
+                      <Link to="/procedure" className="block group">
+                        <span className="block text-body group-hover:text-action">{p.title}</span>
+                        <span className="text-caption text-action">지금 할 때입니다</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Card>
           </div>
         </div>
