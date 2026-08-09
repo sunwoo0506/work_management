@@ -1,0 +1,33 @@
+# 데이터베이스 — 업무 내용이 들어 있으므로 커밋하지 않는다
+*.db
+*.db-journal
+*.db-wal
+
+# 비밀정보 (Anthropic API 키 등)
+.streamlit/secrets.toml
+.env
+
+# 녹음 파일과 전사 결과 — 회의 음성은 저장소에 올리지 않는다
+recordings/
+transcripts/
+*.m4a
+*.mp3
+*.wav
+*.amr
+
+# 파이썬
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# 브레인스토밍 산출물
+.superpowers/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
