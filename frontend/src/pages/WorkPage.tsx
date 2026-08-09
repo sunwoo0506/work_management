@@ -8,7 +8,6 @@ import SampleDataButton from '../features/seed/SampleDataButton'
 import { SAMPLE_MARK } from '../features/seed/sampleData'
 import { useTasks } from '../features/tasks/hooks'
 import { TASK_STATUSES } from '../domain/types'
-import type { Task } from '../features/tasks/api'
 
 type View = '목록' | '칸반'
 
@@ -16,10 +15,20 @@ export default function WorkPage() {
   const { data: tasks, isLoading } = useTasks()
   const [view, setView] = useState<View>('목록')
   const [filter, setFilter] = useState<string>('전체')
-  const [open, setOpen] = useState<Task | null>(null)
+  /**
+   * 열려 있는 업무를 **id 로만** 들고 있는다.
+   *
+   * 업무 객체를 통째로 담으면 그건 열던 순간의 사본이라, 수정해도
+   * 서랍에는 옛 값이 그대로 남는다. id 로 두고 목록에서 매번 찾으면
+   * 수정한 값이 바로 보이고, 지워졌을 때 서랍도 알아서 닫힌다.
+   */
+  const [openId, setOpenId] = useState<string | null>(null)
+  /** 목록의 「수정」으로 열었나 — 그러면 서랍이 곧장 수정 상태로 뜬다 */
+  const [openEditing, setOpenEditing] = useState(false)
   const today = new Date()
 
   const all = tasks ?? []
+  const open = all.find((t) => t.id === openId) ?? null
   const hasSample = all.some((t) => t.title.startsWith(SAMPLE_MARK))
   const shown = filter === '전체' ? all : all.filter((t) => t.status === filter)
 
@@ -65,7 +74,7 @@ export default function WorkPage() {
         {isLoading ? (
           <p className="text-caption text-ink-mute">불러오는 중…</p>
         ) : view === '칸반' ? (
-          <TaskBoard tasks={all} today={today} onOpen={setOpen} />
+          <TaskBoard tasks={all} today={today} onOpen={(t) => setOpenId(t.id)} />
         ) : shown.length === 0 ? (
           <Card>
             <EmptyState
@@ -76,14 +85,34 @@ export default function WorkPage() {
           </Card>
         ) : (
           <Card>
-            <TaskList tasks={shown} today={today} onOpen={setOpen} />
+            <TaskList
+              tasks={shown}
+              today={today}
+              onOpen={(t) => {
+                setOpenEditing(false)
+                setOpenId(t.id)
+              }}
+              onEdit={(t) => {
+                setOpenEditing(true)
+                setOpenId(t.id)
+              }}
+            />
           </Card>
         )}
       </div>
 
       <InboxPanel />
 
-      {open && <TaskDetail task={open} onClose={() => setOpen(null)} />}
+      {open && (
+        <TaskDetail
+          // 수정으로 열었는지에 따라 서랍을 새로 만든다.
+          // key 가 같으면 안쪽 상태가 남아 두 번째 「수정」이 안 먹는다
+          key={`${open.id}-${openEditing}`}
+          task={open}
+          startEditing={openEditing}
+          onClose={() => setOpenId(null)}
+        />
+      )}
     </div>
   )
 }

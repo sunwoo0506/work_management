@@ -25,6 +25,7 @@ export default function TaskForm({
   const [v, setV] = useState<TaskFormValues>({
     title: initial?.title ?? '',
     detail: initial?.detail ?? '',
+    notes: initial?.notes ?? '',
     source: initial?.source ?? '내 발의',
     area: initial?.area ?? '',
     priority: initial?.priority ?? 'P1',
@@ -54,7 +55,12 @@ export default function TaskForm({
       onSubmit={(e) => {
         e.preventDefault()
         if (blockedByReply) return
-        onSubmit({ ...v, area: v.area || null, detail: v.detail || null })
+        onSubmit({
+          ...v,
+          area: v.area || null,
+          detail: v.detail || null,
+          notes: v.notes || null,
+        })
       }}
       className="space-y-4"
     >
@@ -67,8 +73,12 @@ export default function TaskForm({
         />
       </Field>
 
-      <Field label="상세">
+      <Field label="상세" hint="이 일이 무엇인가 — 시작하기 전에 적습니다">
         <TextArea rows={4} value={v.detail ?? ''} onChange={(e) => set('detail', e.target.value)} />
+      </Field>
+
+      <Field label="작업 메모" hint="하면서 알게 된 것 — 상세 화면에서도 바로 쓸 수 있습니다">
+        <TextArea rows={4} value={v.notes ?? ''} onChange={(e) => set('notes', e.target.value)} />
       </Field>
 
       <div className="grid grid-cols-2 gap-4">

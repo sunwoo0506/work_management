@@ -1500,6 +1500,7 @@ export type Database = {
           focus_date: string | null
           id: string
           intake_channel: string | null
+          notes: string | null
           priority: string
           procedure_id: string | null
           progress: number
@@ -1526,6 +1527,7 @@ export type Database = {
           focus_date?: string | null
           id?: string
           intake_channel?: string | null
+          notes?: string | null
           priority?: string
           procedure_id?: string | null
           progress?: number
@@ -1552,6 +1554,7 @@ export type Database = {
           focus_date?: string | null
           id?: string
           intake_channel?: string | null
+          notes?: string | null
           priority?: string
           procedure_id?: string | null
           progress?: number

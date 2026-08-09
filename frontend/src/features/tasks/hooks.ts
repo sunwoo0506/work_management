@@ -24,11 +24,18 @@ export function useCreateTask() {
   })
 }
 
+/**
+ * 수정.
+ *
+ * 수정 전 업무를 통째로 받는다 — 무엇이 바뀌었는지 비교해서
+ * 실행이력에 남기기 위해서다 (api.editTask).
+ */
 export function useUpdateTask() {
   const qc = useQueryClient()
   const companyId = useCompanyId()
   return useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: TaskUpdate }) => api.updateTask(id, patch),
+    mutationFn: ({ before, patch }: { before: Task; patch: TaskUpdate }) =>
+      api.editTask(before, patch),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY(companyId ?? '') }),
   })
 }
@@ -69,8 +76,12 @@ export function useDeleteTask() {
   const qc = useQueryClient()
   const companyId = useCompanyId()
   return useMutation({
-    mutationFn: (id: string) => api.deleteTask(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY(companyId ?? '') }),
+    mutationFn: (task: Task) => api.deleteTask(task),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY(companyId ?? '') })
+      // 절차에서 나온 업무를 지우면 회차 화면의 연결도 끊긴다
+      void qc.invalidateQueries({ queryKey: ['runs'] })
+    },
   })
 }
 

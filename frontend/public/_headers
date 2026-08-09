@@ -1,0 +1,19 @@
+# 응답 헤더.
+#
+# 회사 업무 자료가 들어 있는 화면이라 최소한의 잠금을 걸어 둔다.
+# 로그인과 데이터 보호 자체는 Supabase 인증과 RLS 가 한다 —
+# 여기 있는 것은 브라우저 쪽 실수를 막는 장치다.
+/*
+  # 남의 사이트가 이 화면을 프레임 안에 넣지 못하게 (클릭재킹 방지)
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  # 파일 종류를 브라우저가 멋대로 추측하지 못하게
+  X-Content-Type-Options: nosniff
+  # 다른 사이트로 나갈 때 우리 주소 전체를 흘리지 않게
+  Referrer-Policy: strict-origin-when-cross-origin
+  # 검색엔진에 잡히지 않게. 내부용 도구다
+  X-Robots-Tag: noindex, nofollow
+
+# 해시가 붙은 파일은 내용이 바뀌면 이름도 바뀐다. 오래 캐시해도 안전하다
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

@@ -31,10 +31,12 @@ export default function TodayPage() {
   const { data: directives } = useDirectives()
   const { data: procedures } = useProcedures()
   const { data: lastPeriods } = useLastPeriods()
-  const [open, setOpen] = useState<Task | null>(null)
+  // 업무 객체가 아니라 id 만 들고 있는다 — 이유는 WorkPage 주석 참고
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const today = new Date()
   const all = tasks ?? []
+  const open = all.find((t) => t.id === openId) ?? null
   const hasSample = all.some((t) => t.title.startsWith(SAMPLE_MARK))
 
   const todayStr = fmtDate(today)
@@ -114,7 +116,7 @@ export default function TodayPage() {
                   action={!hasSample ? <SampleDataButton has={false} /> : undefined}
                 />
               ) : (
-                <TaskRows tasks={todo} today={today} onOpen={setOpen} />
+                <TaskRows tasks={todo} today={today} onOpen={(t) => setOpenId(t.id)} />
               )}
             </Card>
 
@@ -166,7 +168,7 @@ export default function TodayPage() {
                     <li key={t.id}>
                       <button
                         type="button"
-                        onClick={() => setOpen(t)}
+                        onClick={() => setOpenId(t.id)}
                         className="w-full text-left group"
                       >
                         <span className="block text-body truncate group-hover:text-action">
@@ -226,7 +228,7 @@ export default function TodayPage() {
         </div>
       )}
 
-      {open && <TaskDetail task={open} onClose={() => setOpen(null)} />}
+      {open && <TaskDetail task={open} onClose={() => setOpenId(null)} />}
     </div>
   )
 }

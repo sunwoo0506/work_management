@@ -5,6 +5,8 @@ import { useDirectives } from '../features/directives/hooks'
 import HandoverList from '../features/base/HandoverList'
 import ContactList from '../features/base/ContactList'
 import SettingsPanel from '../features/base/SettingsPanel'
+import TaskDetail from '../features/tasks/TaskDetail'
+import { useTasks } from '../features/tasks/hooks'
 
 const VIEWS = ['지시사항', '인수인계', '연락처', '설정'] as const
 type View = (typeof VIEWS)[number]
@@ -13,6 +15,10 @@ export default function BasePage() {
   const today = new Date()
   const [view, setView] = useState<View>('지시사항')
   const { data: directives } = useDirectives()
+  // 업무 객체가 아니라 id 만 들고 있는다 — 이유는 WorkPage 주석 참고
+  const { data: tasks } = useTasks()
+  const [openId, setOpenId] = useState<string | null>(null)
+  const open = (tasks ?? []).find((t) => t.id === openId) ?? null
 
   return (
     <div className="max-w-[1120px]">
@@ -44,9 +50,10 @@ export default function BasePage() {
           <div className="grid grid-cols-[1fr_320px] gap-5 items-start">
             <Card title="지시사항" count={directives?.length ?? 0}>
               <p className="text-caption text-ink-mute mb-3">
-                업무를 지시사항에 연결하면 여기에 진행률이 합산됩니다.
+                줄을 누르면 <strong className="font-semibold">무엇을 · 왜 먼저인가 · 딸린 업무</strong>가
+                펼쳐집니다. 업무를 지시사항에 연결하면 여기에 진행률이 합산됩니다.
               </p>
-              <DirectiveList today={today} />
+              <DirectiveList today={today} onOpenTask={(t) => setOpenId(t.id)} />
             </Card>
 
             <Card title="앞으로 들어올 것">
@@ -69,6 +76,8 @@ export default function BasePage() {
         {view === '연락처' && <ContactList />}
         {view === '설정' && <SettingsPanel />}
       </div>
+
+      {open && <TaskDetail task={open} onClose={() => setOpenId(null)} />}
     </div>
   )
 }
