@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { PillButton, Select, TextInput } from '../../components/Field'
+import { Card } from '../../components/ui'
 import { AREAS, PRIORITIES } from '../../domain/types'
 import type { Priority } from '../../domain/types'
 import { useCaptureInbox, useDiscardInbox, useInbox, usePromoteInbox } from './hooks'
@@ -13,45 +14,41 @@ export default function InboxPanel() {
   const [promoting, setPromoting] = useState<InboxItem | null>(null)
 
   return (
-    <section className="mt-10">
-      <h2 className="text-tagline font-semibold">인박스</h2>
-      <p className="text-caption text-ink-mute mt-1">
-        분류하지 말고 던져두세요. 나중에 업무로 올리면 됩니다.
-      </p>
+    <div className="mt-8">
+      <Card title="인박스" count={items?.length ?? 0}>
+        <p className="text-caption text-ink-mute -mt-1 mb-3">
+          분류하지 말고 던져두세요. 나중에 업무로 올리면 됩니다.
+        </p>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          const v = text.trim()
-          if (!v) return
-          capture.mutate(v, { onSuccess: () => setText('') })
-        }}
-        className="mt-3"
-      >
-        <TextInput
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="떠오른 것을 적고 엔터"
-          aria-label="인박스에 메모 추가"
-        />
-      </form>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            const v = text.trim()
+            if (!v) return
+            capture.mutate(v, { onSuccess: () => setText('') })
+          }}
+        >
+          <TextInput
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="떠오른 것을 적고 엔터"
+            aria-label="인박스에 메모 추가"
+          />
+        </form>
 
-      {items && items.length > 0 && (
-        <ul className="mt-3 divide-y divide-divider">
-          {items.map((it) => (
-            <InboxRow key={it.id} item={it} onPromote={() => setPromoting(it)} />
-          ))}
-        </ul>
-      )}
+        {items && items.length > 0 ? (
+          <ul className="mt-3 divide-y divide-divider">
+            {items.map((it) => (
+              <InboxRow key={it.id} item={it} onPromote={() => setPromoting(it)} />
+            ))}
+          </ul>
+        ) : (
+          <p className="text-caption text-ink-mute mt-4">비어 있습니다.</p>
+        )}
+      </Card>
 
-      {items?.length === 0 && (
-        <p className="text-caption text-ink-mute mt-4">비어 있습니다.</p>
-      )}
-
-      {promoting && (
-        <PromoteDialog item={promoting} onClose={() => setPromoting(null)} />
-      )}
-    </section>
+      {promoting && <PromoteDialog item={promoting} onClose={() => setPromoting(null)} />}
+    </div>
   )
 }
 

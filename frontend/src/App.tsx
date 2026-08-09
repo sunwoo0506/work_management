@@ -13,19 +13,15 @@ export default function App() {
       <Sidebar />
       <main className="flex-1 px-10 py-8 overflow-x-hidden">
         <Routes>
-          {/*
-            1단계에서는 「업무」로 보낸다. 「오늘」 화면은 4단계에서 만들어지고,
-            그전까지 첫 화면이 자리표시자면 매일 열 이유가 없다.
-            4단계에서 이 줄을 지우면 원래 설계(「오늘」이 첫 화면)로 돌아간다.
-          */}
-          <Route path="/" element={<Navigate to="/work" replace />} />
+          {/* 첫 화면은 「오늘」. 1단계 데이터로 만들 수 있는 블록만 채워져 있다 */}
+          <Route path="/" element={<Navigate to="/today" replace />} />
           <Route path="/today" element={<TodayPage />} />
           <Route path="/work" element={<WorkPage />} />
           <Route path="/procedure" element={<ProcedurePage />} />
           <Route path="/plan" element={<PlanPage />} />
           <Route path="/record" element={<RecordPage />} />
           <Route path="/base" element={<BasePage />} />
-          <Route path="*" element={<Navigate to="/work" replace />} />
+          <Route path="*" element={<Navigate to="/today" replace />} />
         </Routes>
       </main>
     </div>

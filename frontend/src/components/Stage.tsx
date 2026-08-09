@@ -1,3 +1,5 @@
+import { Card, PageHeader } from './ui'
+
 /**
  * 아직 만들지 않은 화면의 자리표시자.
  *
@@ -7,29 +9,46 @@
 export default function Stage({
   stage,
   title,
+  description,
   items,
 }: {
   stage: number
   title: string
-  items: string[]
+  description?: string
+  items: { text: string; stage?: number }[]
 }) {
   return (
-    <div className="max-w-[640px]">
-      <p className="text-caption text-ink-mute uppercase tracking-wide">{stage}단계</p>
-      <h1 className="text-[28px] leading-[1.2] font-semibold mt-1">{title}</h1>
-      <div className="mt-6 bg-parchment rounded-lg p-6 border border-hairline">
-        <p className="text-body text-ink-soft">
-          이 화면은 <strong className="font-semibold">{stage}단계</strong>에서 만듭니다.
-          그때 들어올 것은 이렇습니다.
-        </p>
-        <ul className="mt-4 space-y-1.5">
-          {items.map((i) => (
-            <li key={i} className="text-body text-ink-soft flex gap-2">
-              <span aria-hidden className="text-ink-mute">·</span>
-              {i}
-            </li>
-          ))}
-        </ul>
+    <div className="max-w-[1120px]">
+      <PageHeader title={title} description={description} />
+
+      <div className="grid grid-cols-[1fr_320px] gap-5 mt-6 items-start">
+        <Card title={`${stage}단계에서 만듭니다`}>
+          <ul className="space-y-3">
+            {items.map((i) => (
+              <li key={i.text} className="flex gap-2.5 items-baseline">
+                <span
+                  aria-hidden
+                  className="text-caption text-ink-mute bg-canvas border border-hairline
+                             rounded-full px-2 py-0.5 shrink-0 whitespace-nowrap"
+                >
+                  {i.stage ?? stage}단계
+                </span>
+                <span className="text-body text-ink-soft leading-relaxed">{i.text}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+
+        <Card title="지금 쓸 수 있는 것">
+          <p className="text-body text-ink-soft leading-relaxed">
+            1단계에서는 <strong className="font-semibold">「오늘」</strong>과{' '}
+            <strong className="font-semibold">「업무」</strong>,{' '}
+            <strong className="font-semibold">「기준」</strong>이 동작합니다.
+          </p>
+          <p className="text-caption text-ink-mute mt-3 leading-relaxed">
+            인박스에 던져두고, 업무로 올리고, 칸반으로 옮기는 것까지 됩니다.
+          </p>
+        </Card>
       </div>
     </div>
   )

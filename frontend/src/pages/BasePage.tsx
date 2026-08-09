@@ -1,37 +1,43 @@
+import { Card, LaterNote, PageHeader } from '../components/ui'
 import DirectiveList from '../features/directives/DirectiveList'
+import { useDirectives } from '../features/directives/hooks'
 
 export default function BasePage() {
   const today = new Date()
+  const { data: directives } = useDirectives()
 
   return (
-    <div className="max-w-[900px]">
-      <h1 className="text-[28px] leading-[1.2] font-semibold">기준</h1>
+    <div className="max-w-[1120px]">
+      <PageHeader
+        title="기준"
+        description="바뀌지 않는 것들. 지시사항·인수인계·연락처·설정이 여기 모입니다."
+      />
 
-      <section className="mt-6">
-        <h2 className="text-tagline font-semibold">지시사항</h2>
-        <p className="text-caption text-ink-mute mt-1">
-          업무를 지시사항에 연결하면 여기에 진행률이 합산됩니다.
-        </p>
-        <div className="mt-3">
+      <div className="grid grid-cols-[1fr_320px] gap-5 mt-6 items-start">
+        <Card
+          title="지시사항"
+          count={directives?.length ?? 0}
+        >
+          <p className="text-caption text-ink-mute mb-3">
+            업무를 지시사항에 연결하면 여기에 진행률이 합산됩니다.
+          </p>
           <DirectiveList today={today} />
-        </div>
-      </section>
+        </Card>
 
-      <section className="mt-10 bg-parchment rounded-lg p-6 border border-hairline">
-        <p className="text-body text-ink-soft">이 탭에 앞으로 들어올 것</p>
-        <ul className="mt-3 space-y-1.5">
-          {[
-            '인수인계 · 연락처 — 7단계',
-            '업체 관리 — 두 번째 업체가 생길 때',
-            '설정 (업무영역 분류, 사내 용어집) — 7단계',
-          ].map((i) => (
-            <li key={i} className="text-body text-ink-soft flex gap-2">
-              <span aria-hidden className="text-ink-mute">·</span>
-              {i}
-            </li>
-          ))}
-        </ul>
-      </section>
+        <div className="space-y-5">
+          <Card title="앞으로 들어올 것">
+            <ul className="space-y-2.5">
+              <li><LaterNote stage={7}>인수인계 · 연락처</LaterNote></li>
+              <li><LaterNote stage={7}>설정 — 업무영역 분류, 사내 용어집</LaterNote></li>
+              <li>
+                <LaterNote stage="나중에">
+                  업체 관리 — 두 번째 업체가 생길 때 만듭니다
+                </LaterNote>
+              </li>
+            </ul>
+          </Card>
+        </div>
+      </div>
     </div>
   )
 }
