@@ -4,16 +4,15 @@ import { Card, EmptyState, PageHeader, StatTile } from '../components/ui'
 import { PriorityBadge, ScheduleBadge, SourceBadge } from '../components/Badge'
 import { daysUntil, ddayLabel, scheduleOf } from '../domain/dday'
 import { sortTasks } from '../domain/sort'
-import { rollupByDirective } from '../domain/rollup'
 import { REQUESTED_SOURCES } from '../domain/types'
 import type { TaskSource } from '../domain/types'
 import { useTasks } from '../features/tasks/hooks'
 import { useInbox } from '../features/inbox/hooks'
-import { useDirectives } from '../features/directives/hooks'
 import { useLastPeriods, useProcedures } from '../features/procedures/hooks'
 import { triggerOf } from '../features/procedures/api'
 import { isDue } from '../domain/trigger'
 import YesterdayCard from '../features/daily/YesterdayCard'
+import ProgressBlock from '../features/directives/ProgressBlock'
 import TaskDetail from '../features/tasks/TaskDetail'
 import SampleDataButton from '../features/seed/SampleDataButton'
 import { SAMPLE_MARK } from '../features/seed/sampleData'
@@ -28,7 +27,6 @@ import type { Task } from '../features/tasks/api'
 export default function TodayPage() {
   const { data: tasks, isLoading } = useTasks()
   const { data: inbox } = useInbox()
-  const { data: directives } = useDirectives()
   const { data: procedures } = useProcedures()
   const { data: lastPeriods } = useLastPeriods()
   // 업무 객체가 아니라 id 만 들고 있는다 — 이유는 WorkPage 주석 참고
@@ -68,9 +66,6 @@ export default function TodayPage() {
     }),
     today,
   )
-
-  // 진행 중 업무 — 지시사항 단위로 묶는다. 업무가 붙은 것만 보인다
-  const rollups = rollupByDirective(directives ?? [], live).filter((r) => r.totalCount > 0)
 
   // 주기가 도래했고 이번 기간에 아직 안 돌린 절차
   const dueProcedures = (procedures ?? []).filter(
@@ -120,41 +115,7 @@ export default function TodayPage() {
               )}
             </Card>
 
-            <Card title="진행 중 업무" count={rollups.length}>
-              {rollups.length === 0 ? (
-                <EmptyState
-                  message="지시사항에 연결된 업무가 없습니다."
-                  hint="업무를 지시사항에 연결하면 여기에 진행률이 합산됩니다."
-                />
-              ) : (
-                <ul className="space-y-3.5">
-                  {rollups.map((r) => (
-                    <li key={r.id}>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-caption text-ink-mute font-semibold w-11 shrink-0">
-                          {r.code}
-                        </span>
-                        <span className="text-body flex-1 truncate">{r.title}</span>
-                        <span className="text-caption text-ink-mute shrink-0">
-                          {r.doneCount}/{r.totalCount}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-1.5 pl-13">
-                        <div className="h-1.5 flex-1 bg-divider rounded-full overflow-hidden">
-                          <div className="h-full bg-action" style={{ width: `${r.progress}%` }} />
-                        </div>
-                        <span className="text-caption text-ink-mute w-9 text-right">
-                          {r.progress}%
-                        </span>
-                        <span className="text-caption text-ink-mute w-16 text-right">
-                          {ddayLabel(daysUntil(r.dueDate, today))}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
+            <ProgressBlock today={today} onOpenTask={(t) => setOpenId(t.id)} />
           </div>
 
           {/* 오른쪽 — 곁눈질용 */}
