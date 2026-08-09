@@ -469,6 +469,56 @@ export type Database = {
           },
         ]
       }
+      periodic_reports: {
+        Row: {
+          closed_at: string | null
+          company_id: string
+          created_at: string
+          id: string
+          kind: string
+          narrative: string | null
+          period_from: string
+          period_to: string
+          snapshot: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          closed_at?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          kind: string
+          narrative?: string | null
+          period_from: string
+          period_to: string
+          snapshot?: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          closed_at?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          narrative?: string | null
+          period_from?: string
+          period_to?: string
+          snapshot?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "periodic_reports_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       procedure_steps: {
         Row: {
           automatable: boolean

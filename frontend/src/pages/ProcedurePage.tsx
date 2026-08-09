@@ -10,6 +10,7 @@ import {
 import ProcedureForm from '../features/procedures/ProcedureForm'
 import ProcedureDetail from '../features/procedures/ProcedureDetail'
 import RunPanel from '../features/procedures/RunPanel'
+import ExceptionInbox from '../features/exceptions/ExceptionInbox'
 
 export default function ProcedurePage() {
   const { data: procedures, isLoading } = useProcedures()
@@ -93,12 +94,7 @@ export default function ProcedurePage() {
             )}
           </Card>
 
-          <Card title="⚠️ 예외 확인함">
-            <LaterNote stage={5}>
-              절차대로 안 된 것을 툴이 찾아 보여줍니다. 회차가 몇 번 쌓여야
-              「평소」가 정의되므로 5단계입니다.
-            </LaterNote>
-          </Card>
+          <ExceptionInbox />
         </div>
 
         <div className="space-y-5">

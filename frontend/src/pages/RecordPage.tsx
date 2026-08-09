@@ -3,9 +3,11 @@ import { Card, LaterNote, PageHeader } from '../components/ui'
 import { PillButton } from '../components/Field'
 import DailyLogPanel from '../features/daily/DailyLogPanel'
 import { shiftDays, ymd } from '../domain/daily'
+import ReportPanel from '../features/reports/ReportPanel'
 
 export default function RecordPage() {
   const [offset, setOffset] = useState(0)
+  const [view, setView] = useState<'업무일지' | '리포트'>('업무일지')
   const date = shiftDays(new Date(), offset)
   const dateStr = ymd(date)
   const isToday = offset === 0
@@ -37,6 +39,29 @@ export default function RecordPage() {
         }
       />
 
+      <div className="flex gap-1.5 mt-5">
+        {(['업무일지', '리포트'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={[
+              'text-caption rounded-full px-3 py-1.5 border',
+              view === v
+                ? 'text-action border-action font-semibold'
+                : 'text-ink-mute border-hairline hover:text-ink',
+            ].join(' ')}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+
+      {view === '리포트' ? (
+        <div className="mt-5">
+          <ReportPanel />
+        </div>
+      ) : (
       <div className="grid grid-cols-[1fr_320px] gap-5 mt-6 items-start">
         <div>
           <h2 className="text-tagline font-semibold mb-4">
@@ -61,11 +86,6 @@ export default function RecordPage() {
           <Card title="앞으로 들어올 것">
             <ul className="space-y-2.5">
               <li>
-                <LaterNote stage={5}>
-                  주간 · 월간 · 연간 리포트 — 성과평가 자료가 됩니다
-                </LaterNote>
-              </li>
-              <li>
                 <LaterNote stage={7}>
                   회의록 · 전화메모 — 폰 녹음을 올리면 회의록이 됩니다
                 </LaterNote>
@@ -74,6 +94,7 @@ export default function RecordPage() {
           </Card>
         </div>
       </div>
+      )}
     </div>
   )
 }

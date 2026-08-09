@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { PillButton, TextInput } from '../../components/Field'
 import { useRunSteps, useRunMutations } from './hooks'
+import { useDetectForRun } from '../exceptions/hooks'
 import { supabase } from '../../lib/supabase'
 import { useQuery } from '@tanstack/react-query'
 import type { Run } from './api'
@@ -24,6 +25,7 @@ export default function RunPanel({ runId, onClose }: { runId: string; onClose: (
   })
   const { data: steps } = useRunSteps(runId)
   const m = useRunMutations(runId)
+  const detect = useDetectForRun()
   const [adhoc, setAdhoc] = useState('')
 
   if (!run) return null
@@ -149,10 +151,19 @@ export default function RunPanel({ runId, onClose }: { runId: string; onClose: (
             <div className="flex gap-2 mt-6">
               <PillButton
                 type="button"
-                disabled={m.finish.isPending}
-                onClick={() => m.finish.mutate({ id: run.id, result: '완료' }, { onSuccess: onClose })}
+                disabled={m.finish.isPending || detect.isPending}
+                onClick={() =>
+                  m.finish.mutate(
+                    { id: run.id, result: '완료' },
+                    {
+                      // 회차를 닫는 순간 절차와 대조해 다른 점을 찾는다.
+                      // 탐지가 실패해도 회차 완료는 이미 저장됐다 — 부가 기능이다
+                      onSuccess: () => detect.mutate(run.id, { onSuccess: onClose }),
+                    },
+                  )
+                }
               >
-                회차 완료
+                {detect.isPending ? '예외 확인 중…' : '회차 완료'}
               </PillButton>
               <PillButton
                 type="button"
