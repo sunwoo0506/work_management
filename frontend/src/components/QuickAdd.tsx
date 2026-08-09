@@ -1,16 +1,17 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import TaskForm from '../features/tasks/TaskForm'
 import { useCreateTask } from '../features/tasks/hooks'
 
 /**
  * 빠른 입력.
  *
- * 회의록·전화메모는 7단계에서 붙는다. 지금은 눌러도 안내만 뜬다 —
- * 버튼을 아예 안 만들면 "그런 기능이 있었나"를 잊어버린다.
+ * 새 업무는 여기서 바로 만들고, 회의록·전화메모는 「기록」 탭의
+ * 해당 화면으로 데려간다. 사이드바에서 세 번 누를 것을 한 번에 끝낸다.
  */
 export default function QuickAdd() {
   const [open, setOpen] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const navigate = useNavigate()
   const create = useCreateTask()
 
   return (
@@ -26,23 +27,19 @@ export default function QuickAdd() {
         </button>
         <button
           type="button"
-          onClick={() => setNotice('회의록은 7단계에서 만듭니다.')}
-          className="text-caption text-ink-mute bg-canvas border border-hairline rounded-full px-3 py-1.5"
+          onClick={() => navigate('/record?view=회의록')}
+          className="text-caption text-action bg-canvas border border-hairline rounded-full px-3 py-1.5"
         >
           ＋ 회의록
         </button>
         <button
           type="button"
-          onClick={() => setNotice('전화메모는 7단계에서 만듭니다.')}
-          className="text-caption text-ink-mute bg-canvas border border-hairline rounded-full px-3 py-1.5"
+          onClick={() => navigate('/record?view=전화메모')}
+          className="text-caption text-action bg-canvas border border-hairline rounded-full px-3 py-1.5"
         >
           ＋ 전화메모
         </button>
       </div>
-
-      {notice && (
-        <p className="text-caption text-ink-mute mt-2 px-2 leading-relaxed">{notice}</p>
-      )}
 
       {open && (
         <div className="fixed inset-0 bg-ink/20 z-50 grid place-items-center px-6" onClick={() => setOpen(false)}>
