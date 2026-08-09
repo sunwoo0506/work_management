@@ -31,3 +31,9 @@ venv/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# 프론트엔드
+node_modules/
+dist/
+.env.local
+.env.*.local
