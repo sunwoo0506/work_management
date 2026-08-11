@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { TextArea } from '../../components/Field'
 import { Markdown } from '../../components/Markdown'
-import { useAsk, useMessages, useThread } from './hooks'
+import { numberCitations } from './citations'
+import { useAsk, useClearThread, useDeleteMessage, useMessages, useThread } from './hooks'
 import type { Message, Source, WebSource } from './hooks'
 import type { Task } from '../tasks/api'
 
@@ -42,6 +43,9 @@ export default function ChatWindow({ task, onClose }: { task: Task; onClose: () 
    * 매번 사용자가 켠다. 창을 닫으면 다시 꺼진다 — 켜 둔 걸 잊고 쓰지 않게.
    */
   const [web, setWeb] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const remove = useDeleteMessage(thread?.id ?? null)
+  const clear = useClearThread(task.id)
   const scroller = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -83,21 +87,67 @@ export default function ChatWindow({ task, onClose }: { task: Task; onClose: () 
       className="fixed right-6 bottom-6 z-[60] w-[min(420px,calc(100vw-3rem))] max-h-[min(640px,calc(100vh-3rem))]
                  flex flex-col bg-canvas border border-hairline rounded-lg overflow-hidden"
     >
-      <header className="flex items-start justify-between gap-3 px-4 py-3 border-b border-hairline bg-parchment">
-        <div className="min-w-0">
-          <p className="text-body font-semibold">{ASSISTANT_NAME}</p>
-          <p className="text-caption text-ink-mute truncate">{task.title}</p>
+      <header className="border-b border-hairline bg-parchment px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-body font-semibold">{ASSISTANT_NAME}</p>
+            <p className="text-caption text-ink-mute truncate">{task.title}</p>
+          </div>
+          <div className="shrink-0 flex items-center gap-3">
+            {log.length > 0 && !clearing && (
+              <button
+                type="button"
+                onClick={() => setClearing(true)}
+                className="text-caption text-ink-mute hover:text-alert"
+              >
+                기록 지우기
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="text-caption text-ink-mute">
+              닫기
+            </button>
+          </div>
         </div>
-        <button type="button" onClick={onClose} className="text-caption text-ink-mute shrink-0">
-          닫기
-        </button>
+
+        {/* 통째로 지우기 — 한 갈래가 통으로 잘못됐을 때 */}
+        {clearing && (
+          <div className="mt-2.5 flex items-center gap-3">
+            <span className="text-caption text-ink-soft flex-1">
+              대화 {log.length}마디를 전부 지웁니다. 되돌릴 수 없습니다.
+            </span>
+            <button
+              type="button"
+              disabled={clear.isPending}
+              onClick={() =>
+                thread && clear.mutate(thread.id, { onSuccess: () => setClearing(false) })
+              }
+              className="text-caption text-alert font-semibold disabled:opacity-40"
+            >
+              {clear.isPending ? '지우는 중…' : '지웁니다'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setClearing(false)}
+              className="text-caption text-action font-semibold"
+            >
+              그만두기
+            </button>
+          </div>
+        )}
       </header>
 
       <div ref={scroller} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
         {log.length === 0 ? (
           <Intro />
         ) : (
-          log.map((m) => <Bubble key={m.id} message={m} />)
+          log.map((m) => (
+            <Bubble
+              key={m.id}
+              message={m}
+              onDelete={() => remove.mutate(m.id)}
+              deleting={remove.isPending}
+            />
+          ))
         )}
 
         {ask.isPending && (
@@ -197,15 +247,77 @@ function WebToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => vo
   )
 }
 
-function Bubble({ message }: { message: Message }) {
+/**
+ * 말풍선.
+ *
+ * 지우기는 **줄에 올려야 나온다.** 늘 보이면 대화창이 × 투성이가 되고,
+ * 대화를 나누는 자리가 관리하는 자리처럼 보인다.
+ */
+function Bubble({
+  message,
+  onDelete,
+  deleting,
+}: {
+  message: Message
+  onDelete: () => void
+  deleting: boolean
+}) {
+  const [confirming, setConfirming] = useState(false)
   const mine = message.role === '사람'
   const all = (message.sources ?? []) as unknown as (Source | WebSource)[]
   // url 이 있으면 웹에서 찾은 것, 없으면 이 업무 안의 자료다
   const web = all.filter((s): s is WebSource => 'url' in s)
   const own = all.filter((s): s is Source => !('url' in s))
 
+  // 본문에 박힌 링크를 번호로 바꾼다. 같은 자리를 세 번 인용해도 목록은 한 줄
+  const body = mine ? { text: message.content, sources: [] } : numberCitations(message.content, web)
+
+  if (confirming) {
+    return (
+      <div className="bg-parchment border border-hairline rounded-lg px-3.5 py-2.5">
+        <p className="text-caption text-ink-soft">
+          {mine ? '이 질문을' : '이 답을'} 지웁니다. 되돌릴 수 없습니다.
+        </p>
+        <p className="text-caption text-ink-mute mt-1 leading-relaxed">
+          {mine
+            ? '답은 그대로 남습니다. 같이 지우려면 답도 따로 지우세요.'
+            : '틀린 답을 지우면 나중에 절차가 그 위에 쌓이지 않습니다.'}
+        </p>
+        <div className="flex gap-3 mt-2">
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onDelete}
+            className="text-caption text-alert font-semibold disabled:opacity-40"
+          >
+            {deleting ? '지우는 중…' : '지웁니다'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            className="text-caption text-action font-semibold"
+          >
+            그만두기
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={mine ? 'flex justify-end' : ''}>
+    <div className={`group relative ${mine ? 'flex justify-end' : ''}`}>
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        aria-label="이 말 지우기"
+        title="지우기"
+        className="absolute -top-1 right-0 z-10 text-caption text-ink-mute hover:text-alert
+                   bg-canvas border border-hairline rounded-full w-5 h-5 leading-none
+                   opacity-0 group-hover:opacity-100 focus:opacity-100"
+      >
+        ×
+      </button>
+
       <div
         className={[
           'rounded-lg px-3.5 py-2.5 max-w-[92%]',
@@ -220,7 +332,7 @@ function Bubble({ message }: { message: Message }) {
           <p className="text-body whitespace-pre-wrap leading-relaxed">{message.content}</p>
         ) : (
           <div className="text-body">
-            <Markdown text={message.content} />
+            <Markdown text={body.text} />
           </div>
         )}
 
@@ -232,24 +344,21 @@ function Bubble({ message }: { message: Message }) {
               </p>
             )}
             {web.length > 0 && (
-              <div className="text-caption text-ink-mute">
-                <p>웹에서 찾은 자리 — 눌러서 확인하세요</p>
-                <ul className="mt-0.5 space-y-0.5">
-                  {web.map((s) => (
-                    <li key={s.url} className="truncate">
-                      ·{' '}
-                      <a
-                        href={s.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-action hover:underline"
-                      >
-                        {s.title}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <ul className="text-caption text-ink-mute space-y-0.5">
+                {web.map((s, i) => (
+                  <li key={s.url} className="truncate">
+                    <span className="tabular-nums">[{i + 1}]</span>{' '}
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-action hover:underline"
+                    >
+                      {s.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}

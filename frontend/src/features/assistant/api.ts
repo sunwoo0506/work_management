@@ -134,6 +134,34 @@ export async function addMessage(input: {
     .eq('id', input.threadId)
 }
 
+/**
+ * 대화 한 줄 지우기.
+ *
+ * ── 왜 필요한가 ──────────────────────────────────────────
+ * 사용자 말: *"잘못된 답변은 나중에 독이 될 수도 있어"*.
+ *
+ * 맞다. 이 대화는 **나중에 절차의 재료**가 된다. 틀린 답이 섞여 있으면
+ * 그 위에 쌓이는 절차도 틀린다. 「지난번엔 이렇게 하셨습니다」가
+ * 틀린 말을 근거로 나오면 그건 없느니만 못하다.
+ *
+ * ── 왜 「틀림 표시」가 아니라 삭제인가 ───────────────────
+ * 표시만 해 두면 나중에 그 표시를 존중하는 코드를 **모든 자리에서** 지켜야 한다.
+ * 한 군데만 빠뜨려도 틀린 답이 새어 나온다. 지워 버리는 편이 확실하다.
+ *
+ * (대화 기록은 어차피 AI 가 답변 근거로 인용할 수 없는 자료다 — disclosure_policy.
+ *  학습에만 쓰이므로, 학습에서 빼려면 지우는 게 맞다.)
+ */
+export async function deleteMessage(id: string): Promise<void> {
+  const { error } = await supabase.from('assistant_messages').delete().eq('id', id)
+  if (error) throw error
+}
+
+/** 대화 통째로 지우기. 메시지는 딸려서 함께 지워진다 (on delete cascade) */
+export async function deleteThread(threadId: string): Promise<void> {
+  const { error } = await supabase.from('assistant_threads').delete().eq('id', threadId)
+  if (error) throw error
+}
+
 async function currentUserId(): Promise<string> {
   const { data } = await supabase.auth.getUser()
   const id = data.user?.id

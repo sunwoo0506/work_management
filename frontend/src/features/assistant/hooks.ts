@@ -69,6 +69,32 @@ export function useAsk(taskId: string, taskTitle: string) {
   })
 }
 
+/**
+ * 대화 한 줄 지우기.
+ *
+ * 틀린 답을 남겨 두면 나중에 그 위에 쌓이는 절차도 틀린다.
+ * 이 기록은 학습에만 쓰이므로, 학습에서 빼려면 지우는 게 맞다.
+ */
+export function useDeleteMessage(threadId: string | null) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.deleteMessage(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assistant-messages', threadId] }),
+  })
+}
+
+/** 대화 통째로 지우기 — 한 갈래가 통으로 잘못됐을 때 */
+export function useClearThread(taskId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (threadId: string) => api.deleteThread(threadId),
+    onSuccess: (_r, threadId) => {
+      void qc.invalidateQueries({ queryKey: ['assistant-messages', threadId] })
+      void qc.invalidateQueries({ queryKey: ['assistant-thread', taskId] })
+    },
+  })
+}
+
 /** 첨부파일을 읽고 체크리스트 초안을 뽑는다. **담는 것은 사람이 누른다.** */
 export function useProposeChecklist(taskId: string) {
   return useMutation({
