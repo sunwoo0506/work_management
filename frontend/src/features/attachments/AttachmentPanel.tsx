@@ -35,7 +35,7 @@ export default function AttachmentPanel({ taskId }: { taskId: string }) {
   return (
     <section className="mt-7">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-caption text-ink-mute">첨부파일</h3>
+        <h3 className="text-body font-semibold">첨부파일</h3>
         {list.length > 0 && (
           <span className="text-caption text-ink-mute">
             {list.length}개 중 {readable}개를 AI가 읽을 수 있습니다
@@ -73,14 +73,12 @@ export default function AttachmentPanel({ taskId }: { taskId: string }) {
           disabled={upload.isPending}
           className="text-body text-action font-semibold disabled:opacity-40"
         >
-          {upload.isPending ? '올리는 중…' : '파일 고르기'}
+          {upload.isPending ? '올리는 중…' : '파일 올리기'}
         </button>
         <p className="text-caption text-ink-mute mt-1.5 leading-relaxed">
           여기로 끌어다 놓아도 됩니다 · 한 개 25MB 까지
           <br />
-          <span className="text-ink-mute">
-            글을 읽어 내는 형식 — PDF · docx · txt · csv · md
-          </span>
+          글을 읽어 내는 형식 — PDF · 한글(.hwpx) · 워드(.docx) · txt · csv · md
         </p>
       </div>
 

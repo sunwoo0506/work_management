@@ -19,15 +19,17 @@ export function Field({
   )
 }
 
-export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+// React 19 부터 함수 컴포넌트도 ref 를 그냥 prop 으로 받는다.
+// ComponentProps 를 쓰면 ref 가 타입에 포함돼서 forwardRef 로 감쌀 필요가 없다.
+export function TextInput(props: React.ComponentProps<'input'>) {
   return <input {...props} className={`${base} ${props.className ?? ''}`} />
 }
 
-export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function TextArea(props: React.ComponentProps<'textarea'>) {
   return <textarea {...props} className={`${base} ${props.className ?? ''}`} />
 }
 
-export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+export function Select(props: React.ComponentProps<'select'>) {
   return <select {...props} className={`${base} ${props.className ?? ''}`} />
 }
 

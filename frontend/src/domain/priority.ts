@@ -28,8 +28,25 @@ const MEANINGS: Record<Priority, string> = {
   P2: '밀려도 되는 것',
 }
 
+/**
+ * 눈금 아이콘.
+ *
+ * 글자만으로는 밋밋하다는 지적을 받았다. 색을 하나 더 만드는 대신
+ * **모양**을 쓴다 — 채워진 칸 수가 곧 단계다. 색맹인 사람도 읽히고,
+ * 흑백으로 뽑아도 남는다.
+ */
+const PIPS: Record<Priority, string> = {
+  P0: '●●●',
+  P1: '●●○',
+  P2: '●○○',
+}
+
 export function priorityLabel(p: string): string {
   return LABELS[p as Priority] ?? p
+}
+
+export function priorityPips(p: string): string {
+  return PIPS[p as Priority] ?? ''
 }
 
 /** 고를 때 보여줄 설명. 고르는 순간에만 필요하고 목록에서는 방해가 된다 */

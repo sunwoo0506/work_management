@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCompanyId } from '../companies/useCompany'
 import * as api from './api'
-import type { Task, TaskInsert, TaskUpdate } from './api'
+import type { ChecklistItem, Task, TaskInsert, TaskUpdate } from './api'
 
 const KEY = (companyId: string) => ['tasks', companyId] as const
 
@@ -68,7 +68,65 @@ export function useChangeStatus() {
       if (ctx?.prev) qc.setQueryData(key, ctx.prev)
     },
 
+    // 하위 업무를 닫으면 부모 진행률이 따라 움직여야 한다
+    onSuccess: async (_r, { task }) => {
+      if (task.parent_task_id) await api.syncProgress(task.id)
+    },
+
     onSettled: () => qc.invalidateQueries({ queryKey: key }),
+  })
+}
+
+// ── 하위 업무 ─────────────────────────────────────────────
+
+export function useSubtasks(parentId: string | null) {
+  const companyId = useCompanyId()
+  const { data: all } = useTasks()
+  // 업무는 어차피 전부 불러와 있다. 하위만 다시 물으면 화면이 두 번 깜빡인다
+  void companyId
+  return (all ?? []).filter((t) => t.parent_task_id === parentId)
+}
+
+/** 이 업무가 어느 체크 항목에서 올라왔나. 직접 만든 업무면 null */
+export function useSourceChecklistItem(taskId: string | null) {
+  return useQuery({
+    queryKey: ['source-checklist-item', taskId],
+    queryFn: () => api.findSourceChecklistItem(taskId as string),
+    enabled: !!taskId,
+  })
+}
+
+/** 올라온 업무 쪽에서 되돌리기. 업무를 지우면 서랍도 닫아야 한다 */
+export function useReturnToChecklist() {
+  const qc = useQueryClient()
+  const companyId = useCompanyId()
+  return useMutation({
+    mutationFn: ({
+      item, promoted, alsoDeleteTask,
+    }: {
+      item: ChecklistItem
+      promoted: Task
+      alsoDeleteTask: boolean
+    }) => api.cancelPromotion(item, promoted, alsoDeleteTask),
+    onSuccess: async (_r, { item }) => {
+      await api.syncProgress(item.task_id)
+      void qc.invalidateQueries({ queryKey: ['checklist', item.task_id] })
+      void qc.invalidateQueries({ queryKey: KEY(companyId ?? '') })
+    },
+  })
+}
+
+/** 다른 업무 밑으로 묶거나 떼어 내기 — 업무는 남고 관계만 바뀐다 */
+export function useSetParent() {
+  const qc = useQueryClient()
+  const companyId = useCompanyId()
+  return useMutation({
+    mutationFn: ({ task, parentId }: { task: Task; parentId: string | null }) =>
+      api.setParent(task, parentId),
+    onSuccess: async (_r, { task }) => {
+      if (task.parent_task_id) await api.syncProgress(task.parent_task_id)
+      void qc.invalidateQueries({ queryKey: KEY(companyId ?? '') })
+    },
   })
 }
 
@@ -128,13 +186,34 @@ export function useChecklistMutations(taskId: string | null) {
         api.toggleChecklistItem(id, done),
       onSuccess: after,
     }),
-    rename: useMutation({
-      mutationFn: ({ id, label }: { id: string; label: string }) =>
-        api.renameChecklistItem(id, label),
+    edit: useMutation({
+      mutationFn: ({
+        id, patch,
+      }: {
+        id: string
+        patch: { label?: string; note?: string | null; due_date?: string | null }
+      }) => api.editChecklistItem(id, patch),
       onSuccess: after,
     }),
     remove: useMutation({
       mutationFn: (id: string) => api.removeChecklistItem(id),
+      onSuccess: after,
+    }),
+    /** 항목 하나를 업무로 올린다. 항목은 남고 올라간 업무를 가리킨다 */
+    promote: useMutation({
+      mutationFn: ({ item, parent }: { item: ChecklistItem; parent: Task }) =>
+        api.promoteChecklistItem(item, parent),
+      onSuccess: after,
+    }),
+    /** 올린 것을 되돌린다. 업무까지 지울지는 부르는 쪽이 정한다 */
+    cancelPromote: useMutation({
+      mutationFn: ({
+        item, promoted, alsoDeleteTask,
+      }: {
+        item: ChecklistItem
+        promoted: Task | null
+        alsoDeleteTask: boolean
+      }) => api.cancelPromotion(item, promoted, alsoDeleteTask),
       onSuccess: after,
     }),
   }

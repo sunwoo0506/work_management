@@ -1,7 +1,8 @@
 import { supabase } from '../../lib/supabase'
 import type { Insert, Row, Update } from '../../lib/supabase'
 import type { Json } from '../../lib/database.types'
-import { progressFromChecklist } from '../../domain/progress'
+import { resolveProgress } from '../../domain/progress'
+import { completionBlock } from '../../domain/complete'
 
 export type Task = Row<'tasks'>
 export type TaskInsert = Insert<'tasks'>
@@ -58,6 +59,7 @@ const TRACKED: { key: keyof Task; label: string }[] = [
   { key: 'source', label: '출처' },
   { key: 'directive_id', label: '지시사항' },
   { key: 'reply_body', label: '회신' },
+  { key: 'parent_task_id', label: '상위 업무' },
 ]
 
 /**
@@ -96,13 +98,70 @@ function same(a: unknown, b: unknown): boolean {
   return norm(a) === norm(b)
 }
 
+/**
+ * 상태 바꾸기.
+ *
+ * 두 가지를 여기서 챙긴다 —
+ *   ① **완료 규칙**(설계서 §4.2). 그동안 수정 폼 안에만 있어서 칸반에서
+ *      카드를 끌면 그냥 닫혔다. 상태를 바꾸는 길이 셋이 되었으므로
+ *      길목 하나로 모은다.
+ *   ② **끝난 시각**. 아카이브를 「최근 끝난 순」으로 늘어놓는 데 쓴다.
+ *      다시 열면 지운다 — 안 지우면 열려 있는 업무에 완료 시각이 남는다.
+ */
 export async function changeStatus(task: Task, status: string): Promise<Task> {
-  const updated = await updateTask(task.id, { status })
+  if (status === '완료') {
+    const blocked = completionBlock(task)
+    if (blocked) throw new Error(blocked)
+  }
+
+  const patch: TaskUpdate = { status }
+  if (status === '완료' && !task.completed_at) patch.completed_at = new Date().toISOString()
+  if (status !== '완료' && task.completed_at) patch.completed_at = null
+
+  const updated = await updateTask(task.id, patch)
   await logActivity(task.company_id, 'task', task.id, '상태변경', {
     from: task.status,
     to: status,
   })
+  await syncPromotedItem(task.id, status === '완료')
   return updated
+}
+
+/**
+ * 체크 항목에서 올라온 업무를 닫으면 **그 항목도 같이 체크된다.**
+ *
+ * 안 그러면 같은 일을 두 번 표시해야 한다 — 업무를 닫고, 부모로 돌아가 체크를 하고.
+ * 두 번 해야 하는 표시는 결국 한 번만 하게 되고, 그러면 두 숫자가 어긋난다.
+ *
+ * 실패해도 넘어간다. 업무 상태는 이미 바뀌었고, 체크 하나가 늦는 것보다
+ * 오류창이 뜨는 게 더 방해다.
+ */
+async function syncPromotedItem(taskId: string, done: boolean): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('checklist')
+      .update({ done })
+      .eq('promoted_task_id', taskId)
+      .select('task_id')
+    // 그 부모 업무의 진행률도 다시 맞춘다
+    const parentId = data?.[0]?.task_id
+    if (parentId) await syncProgress(parentId)
+  } catch (e) {
+    console.warn('올린 항목 체크 반영 실패:', e)
+  }
+}
+
+// ── 하위 업무 ─────────────────────────────────────────────
+//
+// 하위 업무는 **제 몫을 하는 업무**다 (사용자 말: *"각각의 세부업무는 별도로
+// 존재하지만 업무창에서는 관련 세부업무가 하단에 보이는거지"*).
+// 목록에도 제 줄로 나오고 자기 기한·체크리스트·AI 대화를 갖는다.
+// 부모 서랍에서는 그것들이 모여 보일 뿐이다.
+
+/** 이미 있는 업무를 부모 밑으로 옮기거나 떼어 낸다 */
+export async function setParent(task: Task, parentId: string | null): Promise<Task> {
+  if (parentId === task.id) throw new Error('자기 자신을 부모로 둘 수 없습니다.')
+  return editTask(task, { parent_task_id: parentId })
 }
 
 /**
@@ -188,10 +247,83 @@ export async function toggleChecklistItem(id: string, done: boolean): Promise<vo
   if (error) throw error
 }
 
-/** 항목 글귀 고치기. 잘못 쓴 항목을 지웠다 다시 만들면 체크 상태가 날아간다 */
-export async function renameChecklistItem(id: string, label: string): Promise<void> {
-  const { error } = await supabase.from('checklist').update({ label }).eq('id', id)
+/**
+ * 항목 고치기 — 글귀·설명·기한.
+ *
+ * 잘못 쓴 항목을 지웠다 다시 만들면 체크 상태가 날아간다.
+ * 설명과 기한은 「펼치면 나오는 것」이다 — 대부분의 항목은 비어 있다.
+ */
+export async function editChecklistItem(
+  id: string,
+  patch: { label?: string; note?: string | null; due_date?: string | null },
+): Promise<void> {
+  const { error } = await supabase.from('checklist').update(patch).eq('id', id)
   if (error) throw error
+}
+
+/**
+ * 체크 항목 하나를 **업무로 올린다.**
+ *
+ * 언제 쓰나 — 항목 하나가 자기 첨부파일이 필요해지고, 클로니와 따로 상의해야 하고,
+ * 「오늘 마감」에 떠야 할 때. 체크리스트 항목은 이 업무 안에서만 살아서
+ * 목록·오늘·아카이브 어디에도 안 나온다.
+ *
+ * 인박스 승격과 같은 방식이다 — 처음부터 무엇을 쓸지 고르게 하지 않고,
+ * 필요해진 것만 올린다.
+ *
+ * 항목은 **지우지 않는다.** 체크 표시로 남고, 올라간 업무를 가리킨다.
+ * 지우면 "내가 뭘 하려던 거였지"가 된다.
+ */
+export async function promoteChecklistItem(item: ChecklistItem, parent: Task): Promise<Task> {
+  const task = await createTask({
+    company_id: item.company_id,
+    parent_task_id: parent.id,
+    title: item.label,
+    detail: item.note,
+    due_date: item.due_date ?? parent.due_date,
+    // 출처는 「이 업무가 어디서 생겼나」다. 부모가 인박스에서 왔다는 것과
+    // 이 업무가 체크 항목에서 올라왔다는 것은 다른 사실이라 물려받지 않는다
+    source: '체크리스트',
+    area: parent.area,
+    priority: parent.priority,
+    directive_id: parent.directive_id,
+    status: '할 일',
+  })
+
+  const { error } = await supabase
+    .from('checklist')
+    .update({ promoted_task_id: task.id })
+    .eq('id', item.id)
+  if (error) throw error
+
+  return task
+}
+
+/**
+ * 올린 것을 되돌린다.
+ *
+ * 두 가지가 있다 —
+ *   ① 연결만 끊기  — 올린 업무는 그대로 두고 체크 항목과의 줄만 끊는다.
+ *                    그 업무가 이미 제 몫을 하고 있을 때 (파일·대화가 붙었을 때).
+ *   ② 업무까지 지우기 — 잘못 눌렀을 때. 원래대로 체크 항목만 남는다.
+ *
+ * 체크 항목은 **어느 쪽이든 남는다.** 지우면 "내가 뭘 하려던 거였지"가 된다.
+ *
+ * 무엇이 사라지는지는 화면에서 미리 보여 준다 — deleteTask 가 파일 실물과
+ * AI 대화까지 치우기 때문에 되돌릴 수 없다.
+ */
+export async function cancelPromotion(
+  item: ChecklistItem,
+  promoted: Task | null,
+  alsoDeleteTask: boolean,
+): Promise<void> {
+  const { error } = await supabase
+    .from('checklist')
+    .update({ promoted_task_id: null })
+    .eq('id', item.id)
+  if (error) throw error
+
+  if (alsoDeleteTask && promoted) await deleteTask(promoted)
 }
 
 export async function removeChecklistItem(id: string): Promise<void> {
@@ -232,21 +364,83 @@ export async function addChecklistItems(
  */
 export async function syncProgress(taskId: string): Promise<void> {
   try {
-    const items = await listChecklist(taskId)
-    const next = progressFromChecklist(items)
-    if (next === null) return
-
     const { data: task } = await supabase
       .from('tasks')
-      .select('progress')
+      .select('progress, parent_task_id')
       .eq('id', taskId)
       .maybeSingle()
-    if (!task || task.progress === next) return
+    if (!task) return
 
-    await supabase.from('tasks').update({ progress: next }).eq('id', taskId)
+    const [children, checklist] = await Promise.all([
+      listSubtasks(taskId),
+      listChecklist(taskId),
+    ])
+
+    const next = resolveProgress({
+      children,
+      checklist,
+      manual: task.progress,
+    })
+
+    if (next.from !== '손으로' && task.progress !== next.pct) {
+      await supabase.from('tasks').update({ progress: next.pct }).eq('id', taskId)
+    }
+
+    // 하위 업무가 움직이면 부모도 움직여야 한다.
+    // 한 단계만 올라간다 — 손자까지 두는 구조가 아니고, 무한히 타고 올라가면
+    // 고리가 생겼을 때 멈추지 않는다.
+    if (task.parent_task_id) await syncParentOnly(task.parent_task_id)
   } catch (e) {
     console.warn('진행률 반영 실패:', e)
   }
+}
+
+/** 부모만 다시 계산한다. 여기서 또 위로 올라가지 않는다 */
+async function syncParentOnly(parentId: string): Promise<void> {
+  const { data: parent } = await supabase
+    .from('tasks')
+    .select('progress')
+    .eq('id', parentId)
+    .maybeSingle()
+  if (!parent) return
+
+  const [children, checklist] = await Promise.all([
+    listSubtasks(parentId),
+    listChecklist(parentId),
+  ])
+  const next = resolveProgress({ children, checklist, manual: parent.progress })
+  if (next.from !== '손으로' && parent.progress !== next.pct) {
+    await supabase.from('tasks').update({ progress: next.pct }).eq('id', parentId)
+  }
+}
+
+/**
+ * 이 업무가 **어느 체크 항목에서 올라왔나.**
+ *
+ * 올린 쪽(부모 서랍)에만 취소 버튼을 뒀더니 정작 올라온 업무를 보고 있을 때는
+ * 되돌릴 길이 없었다. 사용자가 그걸 찾다 물었다 —
+ *   *"체크리스트에서 온 경우엔 다시 체크리스트로 보내기 버튼이 어디 있는거니"*
+ *
+ * 그래서 반대 방향도 찾을 수 있게 한다. 없으면 null (직접 만든 업무).
+ */
+export async function findSourceChecklistItem(taskId: string): Promise<ChecklistItem | null> {
+  const { data, error } = await supabase
+    .from('checklist')
+    .select('*')
+    .eq('promoted_task_id', taskId)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
+export async function listSubtasks(parentId: string): Promise<Task[]> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('parent_task_id', parentId)
+    .order('created_at')
+  if (error) throw error
+  return data
 }
 
 // ── 공통 ─────────────────────────────────────────────────

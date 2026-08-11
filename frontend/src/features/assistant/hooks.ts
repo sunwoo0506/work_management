@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCompanyId } from '../companies/useCompany'
 import * as api from './api'
-import type { AssistReply, Message, ProposedItem, Source } from './api'
+import type { AssistReply, Message, ProposedItem, Source, WebSource } from './api'
 
 export function useThread(taskId: string | null) {
   return useQuery({
@@ -35,9 +35,11 @@ export function useAsk(taskId: string, taskTitle: string) {
     mutationFn: async ({
       question,
       history,
+      webSearch,
     }: {
       question: string
       history: { role: 'user' | 'assistant'; content: string }[]
+      webSearch?: boolean
     }): Promise<AssistReply> => {
       const thread = await api.ensureThread(companyId as string, taskId, taskTitle)
       await api.addMessage({
@@ -49,7 +51,7 @@ export function useAsk(taskId: string, taskTitle: string) {
       qc.setQueryData(['assistant-thread', taskId], thread)
       void qc.invalidateQueries({ queryKey: ['assistant-messages', thread.id] })
 
-      const reply = await api.callAssist({ mode: '질문', taskId, question, history })
+      const reply = await api.callAssist({ mode: '질문', taskId, question, history, webSearch })
 
       await api.addMessage({
         companyId: companyId as string,
@@ -57,6 +59,7 @@ export function useAsk(taskId: string, taskTitle: string) {
         role: 'AI',
         content: reply.text,
         sources: reply.sources,
+        webSources: reply.webSources,
         tokensIn: reply.tokensIn,
         tokensOut: reply.tokensOut,
       })
@@ -74,4 +77,4 @@ export function useProposeChecklist(taskId: string) {
   })
 }
 
-export type { AssistReply, Message, ProposedItem, Source }
+export type { AssistReply, Message, ProposedItem, Source, WebSource }

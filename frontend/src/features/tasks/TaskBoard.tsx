@@ -38,6 +38,17 @@ export default function TaskBoard({
 
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+      {/*
+        못 옮긴 이유를 말해 준다.
+        카드가 소리 없이 제자리로 돌아가면 "끌기가 고장났나" 하고 또 끈다.
+        (요청받은 업무는 회신을 적어야 「완료」로 닫힌다 — 설계서 §4.2)
+      */}
+      {change.isError && (
+        <p className="text-caption text-ink-soft bg-parchment rounded-md px-3.5 py-2.5 mb-3" role="alert">
+          {change.error instanceof Error ? change.error.message : String(change.error)}
+        </p>
+      )}
+
       <div className="grid grid-cols-4 gap-3">
         {BOARD_STATUSES.map((s) => (
           <Column

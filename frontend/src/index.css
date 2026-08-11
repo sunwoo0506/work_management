@@ -30,11 +30,28 @@
   --radius-md: 11px;
   --radius-lg: 18px;
 
-  /* 본문 17px. 16px이 아니다 */
+  /*
+   * 글자 크기 사다리 — 이 다섯 개 말고 쓰지 않는다.
+   *
+   * 화면마다 28·30·32px 을 손으로 적어 두었더니 같은 자리에 있는 글자끼리
+   * 1~2px 씩 어긋나 「들쑥날쑥」해 보였다. 이름을 붙여 한곳에 모은다.
+   *
+   *   caption 14  보조 설명 · 배지 · 메타
+   *   body    17  본문 · 목록 한 줄 · 섹션 제목(굵기로 구분)
+   *   tagline 21  서랍 제목
+   *   metric  28  숫자 타일
+   *   title   30  페이지 제목
+   *
+   * 섹션 제목을 caption(14) 이 아니라 body(17) 로 두는 이유 —
+   * 제목이 본문보다 작으면 「제목」으로 안 읽히고 그냥 흐린 글씨로 보인다.
+   * 크기는 본문과 같게 두고 **굵기(600)** 로 구분한다.
+   */
   --text-body: 17px;
   --text-body--line-height: 1.47;
   --text-caption: 14px;
   --text-tagline: 21px;
+  --text-metric: 28px;
+  --text-title: 30px;
   --text-display: 40px;
   --text-hero: 56px;
 
@@ -53,5 +70,20 @@
   h1, h2, h3, h4 {
     font-weight: 600;
     letter-spacing: -0.374px;
+  }
+
+  /*
+   * 예시 글(placeholder)은 본문보다 한 단계 작게.
+   *
+   * 왜 — 예시는 **내가 쓴 글이 아니다.** 본문과 같은 17px 로 두면
+   * 빈 칸이 이미 채워진 것처럼 보이고, 예시가 두세 줄이면 그 칸이
+   * 화면에서 제일 큰 덩어리가 된다. 실제로 그렇게 보였다.
+   *
+   * 타이핑한 글은 그대로 17px 이다 — 크기가 바뀌는 순간이
+   * "이제 내 글이다"라는 신호가 된다.
+   */
+  ::placeholder {
+    font-size: var(--text-caption);
+    line-height: 1.5;
   }
 }

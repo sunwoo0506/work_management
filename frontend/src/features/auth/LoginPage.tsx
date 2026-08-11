@@ -29,12 +29,20 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen grid place-items-center bg-canvas px-6">
       <div className="w-full max-w-[380px]">
+        {/*
+          서비스 이름은 「클론미」. AI 비서는 「클로니」.
+          저장소·폴더 이름은 WorkManagement 그대로 둔다 — OneDrive 안에서
+          폴더를 옮기다 저장소가 깨진 적이 있어(회고 2026-08-09_v01) 건드리지 않는다.
+        */}
         <p className="text-caption text-ink-mute uppercase tracking-wide">
-          Work Management
+          Clone Me
         </p>
-        <h1 className="text-[32px] leading-[1.15] font-semibold mt-2">
-          업무관리툴
+        <h1 className="text-title leading-[1.15] font-semibold mt-2">
+          클론미
         </h1>
+        <p className="text-body text-ink-mute mt-2 leading-relaxed">
+          내가 일하는 방식을 남겨서, 언젠가 클로니가 이어받게.
+        </p>
 
         {sent ? (
           <div className="mt-8 bg-parchment rounded-lg p-6 border border-hairline">

@@ -1,4 +1,4 @@
-import { priorityLabel } from '../domain/priority'
+import { priorityLabel, priorityMeaning, priorityPips } from '../domain/priority'
 import type { Schedule } from '../domain/types'
 
 /**
@@ -49,19 +49,34 @@ export function ScheduleBadge({
  *
  * `P0` 이 아니라 「최우선」이라고 쓴다 — P0 를 보고 높은 건지 낮은 건지
  * 매번 생각해야 하면 배지가 제 일을 못 하는 것이다. 저장값은 그대로다.
+ *
+ * ── 왜 새 색을 안 만들었나 ──────────────────────────────
+ * "너무 밋밋하다, 색이라도 넣어 달라"는 지적을 받았다. 그런데
+ * 쓸 수 있는 색이 없다 — 파란색은 「누를 수 있는 것」, 빨간색은
+ * 「기한 초과」로 이미 차 있다(CLAUDE.md). 중요도에 빨간색을 쓰면
+ * 진짜 지연된 건이 묻힌다.
+ *
+ * 대신 세 가지를 겹쳤다 —
+ *   ① 눈금(●●● / ●●○ / ●○○) — 채워진 칸 수가 곧 단계
+ *   ② 채움 대비 — 최우선은 **검정 바탕에 흰 글자**. 목록에서 확 튄다
+ *   ③ 명도 — 중요는 진한 회색 테두리, 보통은 흐리게
+ *
+ * 색상환을 늘리지 않고도 세 단계가 한눈에 갈린다.
  */
 export function PriorityBadge({ priority }: { priority: string }) {
+  const style =
+    priority === 'P0'
+      ? 'bg-ink text-white border-ink font-semibold'
+      : priority === 'P1'
+        ? 'bg-canvas text-ink-soft border-ink-mute'
+        : 'bg-canvas text-ink-mute border-hairline'
+
   return (
     <span
-      className={[
-        'inline-block text-caption px-2 py-0.5 rounded-full border whitespace-nowrap',
-        priority === 'P0'
-          ? 'border-ink text-ink font-semibold'
-          : priority === 'P1'
-            ? 'border-hairline text-ink-soft'
-            : 'border-hairline text-ink-mute',
-      ].join(' ')}
+      className={`inline-flex items-center gap-1.5 text-caption px-2 py-0.5 rounded-full border whitespace-nowrap ${style}`}
+      title={priorityMeaning(priority)}
     >
+      <span className="text-[10px] leading-none tracking-[0.5px]">{priorityPips(priority)}</span>
       {priorityLabel(priority)}
     </span>
   )

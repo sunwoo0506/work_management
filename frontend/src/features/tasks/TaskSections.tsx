@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { groupByArea } from '../../domain/group'
+import type { SearchHit } from '../../domain/search'
 import TaskList from './TaskList'
 import type { Task } from './api'
 
@@ -23,39 +24,52 @@ export default function TaskSections({
   today,
   onOpen,
   onEdit,
+  forceOpen = false,
+  hitsById,
+  childCount,
+  parentTitleById,
 }: {
   tasks: Task[]
   today: Date
   onOpen: (t: Task) => void
   onEdit: (t: Task) => void
+  /** 검색 중이면 전부 펴 둔다 — 찾으러 왔는데 접혀 있으면 또 눌러야 한다 */
+  forceOpen?: boolean
+  hitsById?: Record<string, SearchHit[]>
+  childCount?: Record<string, { done: number; total: number }>
+  parentTitleById?: Record<string, string>
 }) {
   const groups = groupByArea(tasks, today)
   /** 사람이 직접 누른 것만 담는다. 안 담긴 묶음은 「급하면 펴짐」 기본값을 따른다 */
   const [flipped, setFlipped] = useState<Record<string, boolean>>({})
 
-  const allOpen = groups.every((g) => (flipped[g.area] ?? g.urgent))
+  const isOpen = (g: { area: string; urgent: boolean }) =>
+    forceOpen || (flipped[g.area] ?? g.urgent)
+  const allOpen = groups.every(isOpen)
 
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-2">
         <p className="text-caption text-ink-mute">
           영역 {groups.length}개 · 업무 {tasks.length}건
-          <span className="ml-1.5">— 급한 것이 있는 영역은 펴 둡니다</span>
+          {!forceOpen && <span className="ml-1.5">— 급한 것이 있는 영역은 펴 둡니다</span>}
         </p>
-        <button
-          type="button"
-          onClick={() =>
-            setFlipped(Object.fromEntries(groups.map((g) => [g.area, !allOpen])))
-          }
-          className="text-caption text-action font-semibold shrink-0"
-        >
-          {allOpen ? '전부 접기' : '전부 펴기'}
-        </button>
+        {!forceOpen && (
+          <button
+            type="button"
+            onClick={() =>
+              setFlipped(Object.fromEntries(groups.map((g) => [g.area, !allOpen])))
+            }
+            className="text-caption text-action font-semibold shrink-0"
+          >
+            {allOpen ? '전부 접기' : '전부 펴기'}
+          </button>
+        )}
       </div>
 
       <div className="space-y-2">
         {groups.map((g) => {
-          const open = flipped[g.area] ?? g.urgent
+          const open = isOpen(g)
           return (
             <section key={g.area} className="bg-parchment rounded-lg border border-hairline">
               <button
@@ -91,6 +105,9 @@ export default function TaskSections({
                     onOpen={onOpen}
                     onEdit={onEdit}
                     presorted
+                    hitsById={hitsById}
+                    childCount={childCount}
+                    parentTitleById={parentTitleById}
                   />
                 </div>
               )}

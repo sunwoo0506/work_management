@@ -14,7 +14,7 @@ export const BOARD_STATUSES = ['할 일', '진행중', '검토요청', '완료']
  * 값을 늘릴 때는 마이그레이션과 이 파일을 같은 커밋에 넣는다.
  */
 export const TASK_SOURCES = [
-  '내 발의', '요청받음', '일지', '인박스', '회의록', '대표지시', '절차',
+  '내 발의', '요청받음', '일지', '인박스', '회의록', '대표지시', '절차', '체크리스트',
 ] as const
 export type TaskSource = (typeof TASK_SOURCES)[number]
 

@@ -330,8 +330,11 @@ export type Database = {
           company_id: string
           created_at: string
           done: boolean
+          due_date: string | null
           id: string
           label: string
+          note: string | null
+          promoted_task_id: string | null
           required: boolean
           sort_order: number
           task_id: string
@@ -342,8 +345,11 @@ export type Database = {
           company_id: string
           created_at?: string
           done?: boolean
+          due_date?: string | null
           id?: string
           label: string
+          note?: string | null
+          promoted_task_id?: string | null
           required?: boolean
           sort_order?: number
           task_id: string
@@ -354,8 +360,11 @@ export type Database = {
           company_id?: string
           created_at?: string
           done?: boolean
+          due_date?: string | null
           id?: string
           label?: string
+          note?: string | null
+          promoted_task_id?: string | null
           required?: boolean
           sort_order?: number
           task_id?: string
@@ -368,6 +377,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "checklist_promoted_task_id_fkey"
+            columns: ["promoted_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
             referencedColumns: ["id"]
           },
           {
@@ -1556,6 +1572,7 @@ export type Database = {
         Row: {
           area: string | null
           company_id: string
+          completed_at: string | null
           created_at: string
           detail: string | null
           directive_id: string | null
@@ -1564,6 +1581,7 @@ export type Database = {
           id: string
           intake_channel: string | null
           notes: string | null
+          parent_task_id: string | null
           priority: string
           procedure_id: string | null
           progress: number
@@ -1583,6 +1601,7 @@ export type Database = {
         Insert: {
           area?: string | null
           company_id: string
+          completed_at?: string | null
           created_at?: string
           detail?: string | null
           directive_id?: string | null
@@ -1591,6 +1610,7 @@ export type Database = {
           id?: string
           intake_channel?: string | null
           notes?: string | null
+          parent_task_id?: string | null
           priority?: string
           procedure_id?: string | null
           progress?: number
@@ -1610,6 +1630,7 @@ export type Database = {
         Update: {
           area?: string | null
           company_id?: string
+          completed_at?: string | null
           created_at?: string
           detail?: string | null
           directive_id?: string | null
@@ -1618,6 +1639,7 @@ export type Database = {
           id?: string
           intake_channel?: string | null
           notes?: string | null
+          parent_task_id?: string | null
           priority?: string
           procedure_id?: string | null
           progress?: number
@@ -1647,6 +1669,13 @@ export type Database = {
             columns: ["directive_id"]
             isOneToOne: false
             referencedRelation: "directives"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_parent_task_id_fkey"
+            columns: ["parent_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
             referencedColumns: ["id"]
           },
           {

@@ -41,3 +41,11 @@ dist/
 # Supabase CLI 임시 파일 — 연결 정보와 원격 버전 캐시. 사람마다 다르다
 supabase/.temp/
 supabase/.branches/
+
+# ⚠️ AI 열쇠가 들어 있는 파일. 절대 커밋하지 않는다.
+#    supabase/.env.example 은 값이 없는 틀이라 커밋해도 된다 (아래에서 되살린다)
+supabase/.env
+supabase/.env.*
+!supabase/.env.example
+supabase/functions/.env
+supabase/functions/**/.env

@@ -42,7 +42,7 @@ export default function TaskTextSection({
   return (
     <section className="mt-7">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-caption text-ink-mute">{label}</h3>
+        <h3 className="text-body font-semibold">{label}</h3>
         {dirty && (
           <button
             type="button"

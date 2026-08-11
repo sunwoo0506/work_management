@@ -21,7 +21,7 @@ export function PageHeader({
   return (
     <header className="flex items-start justify-between gap-6 pb-6 border-b border-hairline">
       <div className="min-w-0">
-        <h1 className="text-[30px] leading-[1.15] font-semibold tracking-[-0.5px]">{title}</h1>
+        <h1 className="text-title leading-[1.15] font-semibold tracking-[-0.5px]">{title}</h1>
         {description && (
           <p className="text-body text-ink-mute mt-1.5 leading-relaxed">{description}</p>
         )}
@@ -75,7 +75,7 @@ export function StatTile({
     <div className="bg-parchment rounded-lg border border-hairline px-5 py-4">
       <p className="text-caption text-ink-mute">{label}</p>
       <p
-        className={`text-[28px] leading-none font-semibold mt-2 tracking-[-0.5px] ${
+        className={`text-metric leading-none font-semibold mt-2 tracking-[-0.5px] ${
           warn && value > 0 ? 'text-alert' : 'text-ink'
         }`}
       >

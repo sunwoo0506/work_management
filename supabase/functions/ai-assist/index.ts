@@ -2,7 +2,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { getProvider } from '../_shared/provider/index.ts'
 import type { ChatMessage } from '../_shared/provider/index.ts'
-import { ASK_RULES, CHECKLIST_RULES } from './prompt.ts'
+import { ASK_RULES, ASK_RULES_WEB, CHECKLIST_RULES } from './prompt.ts'
 
 /**
  * AI 업무 비서 — 브라우저와 AI 공급자 사이에 서는 유일한 자리.
@@ -57,10 +57,21 @@ Deno.serve(async (req) => {
 
     const provider = getProvider()
 
+    /**
+     * 웹 검색은 **질문일 때만, 그리고 사용자가 켰을 때만** 켠다.
+     *
+     * 체크리스트 뽑기에는 안 켠다 — 그건 이 업무의 자료에서 할 일을 추리는 일이라
+     * 인터넷이 끼어들면 일반론("계획을 세운다")이 섞인다.
+     *
+     * ⚠️ 켜면 질문 글이 밖으로 나간다. 그래서 기본이 꺼짐이고 화면에서 켠다 —
+     *    「밖으로 나가는 것은 사용자가 누른 것뿐」(CLAUDE.md).
+     */
+    const webSearch = mode === '질문' && body?.webSearch === true
+
     const messages: ChatMessage[] =
       mode === '질문'
         ? [
-            { role: 'system', content: ASK_RULES },
+            { role: 'system', content: webSearch ? ASK_RULES_WEB : ASK_RULES },
             { role: 'system', content: ctx.text },
             ...history(body?.history),
             { role: 'user', content: String(body?.question ?? '').slice(0, 4000) },
@@ -76,16 +87,16 @@ Deno.serve(async (req) => {
             },
           ]
 
-    const result = await provider.chat(messages, {
-      light: mode === '체크리스트',
-      maxTokens: mode === '체크리스트' ? 1200 : 2000,
-    })
+    // 한도를 따로 주지 않는다 — 추론형 모델은 생각 토큰까지 이 한도에 들어가서
+    // 짜게 잡으면 답이 통째로 비어 온다. 어댑터의 기본값(넉넉함)을 그대로 쓴다.
+    const result = await provider.chat(messages, { light: mode === '체크리스트', webSearch })
 
     return json({
       mode,
       text: result.text,
       items: mode === '체크리스트' ? parseChecklist(result.text) : undefined,
       sources: ctx.sources,
+      webSources: result.webSources,
       model: result.model,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,

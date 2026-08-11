@@ -6,6 +6,8 @@ export type Thread = Row<'assistant_threads'>
 export type Message = Row<'assistant_messages'>
 
 export type Source = { kind: string; label: string }
+/** 웹에서 찾아본 자리. kind 대신 url 이 있어 화면에서 눌러 확인할 수 있다 */
+export type WebSource = { title: string; url: string }
 export type ProposedItem = { label: string; why: string | null }
 
 export type AssistReply = {
@@ -13,6 +15,7 @@ export type AssistReply = {
   text: string
   items?: ProposedItem[]
   sources: Source[]
+  webSources?: WebSource[]
   model: string
   tokensIn: number | null
   tokensOut: number | null
@@ -31,6 +34,8 @@ export async function callAssist(payload: {
   hint?: string
   attachmentIds?: string[]
   history?: { role: 'user' | 'assistant'; content: string }[]
+  /** 웹에서도 찾아볼까. ⚠️ 켜면 질문 글이 밖으로 나간다 */
+  webSearch?: boolean
 }): Promise<AssistReply> {
   const { data, error } = await supabase.functions.invoke('ai-assist', { body: payload })
 
@@ -104,6 +109,7 @@ export async function addMessage(input: {
   role: '사람' | 'AI'
   content: string
   sources?: Source[]
+  webSources?: WebSource[]
   tokensIn?: number | null
   tokensOut?: number | null
 }): Promise<void> {
@@ -114,7 +120,9 @@ export async function addMessage(input: {
     thread_id: input.threadId,
     role: input.role,
     content: input.content,
-    sources: (input.sources ?? []) as unknown as Json,
+    // 웹 출처도 같은 칸에 담는다 — url 이 있으면 웹, 없으면 이 업무 자료다.
+    // 표를 하나 더 만들 만큼 다른 것이 아니다
+    sources: [...(input.sources ?? []), ...(input.webSources ?? [])] as unknown as Json,
     tokens_in: input.tokensIn ?? null,
     tokens_out: input.tokensOut ?? null,
   })
