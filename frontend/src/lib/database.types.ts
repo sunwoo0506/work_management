@@ -196,6 +196,69 @@ export type Database = {
           },
         ]
       }
+      attachments: {
+        Row: {
+          company_id: string
+          created_at: string
+          extract_note: string | null
+          extract_status: string
+          extracted_text: string | null
+          id: string
+          mime: string | null
+          name: string
+          size_bytes: number | null
+          storage_path: string
+          task_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          extract_note?: string | null
+          extract_status?: string
+          extracted_text?: string | null
+          id?: string
+          mime?: string | null
+          name: string
+          size_bytes?: number | null
+          storage_path: string
+          task_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          extract_note?: string | null
+          extract_status?: string
+          extracted_text?: string | null
+          id?: string
+          mime?: string | null
+          name?: string
+          size_bytes?: number | null
+          storage_path?: string
+          task_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attachments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attachments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calls: {
         Row: {
           action: string | null

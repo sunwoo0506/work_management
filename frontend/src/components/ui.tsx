@@ -85,6 +85,43 @@ export function StatTile({
   )
 }
 
+/**
+ * 진행률 막대.
+ *
+ * 숫자만 있으면 "67%"가 감이 안 온다. 막대가 있으면 눈으로 바로 읽힌다.
+ * 반대로 **막대가 여러 개 겹치면** 어느 게 진짜인지 헷갈린다 —
+ * 그래서 체크리스트 바로 위에는 안 둔다. 거기는 「3 / 5」 숫자로 충분하다.
+ */
+export function ProgressBar({
+  pct,
+  label,
+}: {
+  pct: number
+  /** 막대 옆에 붙는 설명 (「체크리스트 3개 기준」 같은 것) */
+  label?: React.ReactNode
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-body font-semibold tabular-nums">{pct}%</span>
+        {label && <span className="text-caption text-ink-mute">{label}</span>}
+      </div>
+      <div
+        className="mt-1.5 h-2 w-full bg-parchment rounded-full overflow-hidden"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div
+          className="h-full bg-action rounded-full transition-[width]"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function EmptyState({
   message,
   hint,

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { sortTasks } from '../../domain/sort'
-import { daysUntil, ddayLabel, scheduleOf } from '../../domain/dday'
+import { daysUntil, ddayLabel, isDueToday, scheduleOf } from '../../domain/dday'
 import { PriorityBadge, ScheduleBadge, SourceBadge } from '../../components/Badge'
 import { useDeleteTask } from './hooks'
 import type { Task } from './api'
@@ -19,20 +19,25 @@ export default function TaskList({
   today,
   onOpen,
   onEdit,
+  presorted = false,
+  emptyMessage,
 }: {
   tasks: Task[]
   today: Date
   onOpen: (task: Task) => void
   onEdit?: (task: Task) => void
+  /** 이미 정렬해서 넘겼나 — 영역별로 묶을 때는 묶는 쪽이 정렬해 둔다 */
+  presorted?: boolean
+  emptyMessage?: string
 }) {
-  const sorted = sortTasks(tasks, today)
+  const sorted = presorted ? tasks : sortTasks(tasks, today)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const remove = useDeleteTask()
 
   if (sorted.length === 0) {
     return (
       <p className="text-body text-ink-mute py-10 text-center">
-        아직 업무가 없습니다. 「＋ 새 업무」로 만들거나 인박스에서 올리세요.
+        {emptyMessage ?? '아직 업무가 없습니다. 「＋ 새 업무」로 만들거나 인박스에서 올리세요.'}
       </p>
     )
   }
@@ -69,25 +74,45 @@ export default function TaskList({
 
         const schedule = scheduleOf(t, today)
         const d = daysUntil(t.due_date, today)
+        const todayDue = isDueToday(t, today)
 
         return (
-          <li key={t.id} className="group flex items-center hover:bg-parchment">
+          <li
+            key={t.id}
+            className={[
+              'group flex items-center',
+              // 오늘 마감은 줄 전체를 들어 올린다.
+              //
+              // 색을 새로 만들지 않는다 — 파란색은 「누를 수 있는 것」이고
+              // 빨간색은 「기한 초과」다 (CLAUDE.md). 오늘 마감은 둘 다 아니다.
+              // 그래서 **밝기와 왼쪽 기둥**으로만 구분한다. 배경이 밝아지고
+              // 왼쪽에 잉크색 기둥이 서면 훑을 때 눈이 그 줄에서 걸린다.
+              todayDue
+                ? 'bg-pearl border-l-[3px] border-l-ink pl-0.5 hover:bg-parchment'
+                : 'hover:bg-parchment',
+            ].join(' ')}
+          >
             <button
               type="button"
               onClick={() => onOpen(t)}
               className="flex-1 min-w-0 text-left py-3.5 px-2 flex items-center gap-3"
             >
               <span className="flex-1 min-w-0">
-                <span className="block text-body truncate">{t.title}</span>
+                <span className={`block text-body truncate ${todayDue ? 'font-semibold' : ''}`}>
+                  {t.title}
+                </span>
                 <span className="flex items-center gap-1.5 mt-1">
                   <SourceBadge source={t.source} />
                   {t.area && <span className="text-caption text-ink-mute">{t.area}</span>}
                   {/* 메모가 있으면 표시한다 — 열어보지 않고도 어디에 기록이 쌓였는지 보인다 */}
                   {t.notes && <span className="text-caption text-ink-mute" title="작업 메모 있음">✎</span>}
+                  {t.progress > 0 && t.progress < 100 && (
+                    <span className="text-caption text-ink-mute">{t.progress}%</span>
+                  )}
                 </span>
               </span>
               <PriorityBadge priority={t.priority} />
-              <ScheduleBadge schedule={schedule} label={ddayLabel(d)} />
+              <ScheduleBadge schedule={schedule} label={ddayLabel(d)} today={todayDue} />
               <span className="text-caption text-ink-mute w-14 text-right">{t.status}</span>
             </button>
 

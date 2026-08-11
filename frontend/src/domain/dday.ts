@@ -30,6 +30,23 @@ export function scheduleOf(
   return '정상'
 }
 
+/**
+ * 오늘이 기한인가 — 목록에서 눈에 띄게 할 대상.
+ *
+ * 「임박」(7일 이내)과 따로 두는 이유 — 7일 남은 것과 오늘 끝내야 하는 것은
+ * 오늘 아침에 할 행동이 다르다. 같은 회색 배지로 묶으면 그 차이가 사라진다.
+ *
+ * 완료·보류는 제외한다. 이미 손을 뗀 일에 오늘 마감 표시가 붙으면
+ * 표시 자체를 안 믿게 된다.
+ */
+export function isDueToday(
+  task: { status: TaskStatus | string; due_date: string | null },
+  today: Date,
+): boolean {
+  if (task.status === '완료' || task.status === '보류') return false
+  return daysUntil(task.due_date, today) === 0
+}
+
 export function ddayLabel(d: number | null): string {
   if (d === null) return '기한 미정'
   if (d === 0) return '오늘 마감'

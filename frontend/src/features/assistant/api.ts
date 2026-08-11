@@ -1,0 +1,134 @@
+import { supabase } from '../../lib/supabase'
+import type { Row } from '../../lib/supabase'
+import type { Json } from '../../lib/database.types'
+
+export type Thread = Row<'assistant_threads'>
+export type Message = Row<'assistant_messages'>
+
+export type Source = { kind: string; label: string }
+export type ProposedItem = { label: string; why: string | null }
+
+export type AssistReply = {
+  mode: '질문' | '체크리스트'
+  text: string
+  items?: ProposedItem[]
+  sources: Source[]
+  model: string
+  tokensIn: number | null
+  tokensOut: number | null
+}
+
+/**
+ * AI 를 부른다.
+ *
+ * 열쇠는 브라우저에 없다 — Edge Function 이 대신 부른다.
+ * 자료도 여기서 안 보낸다. 함수가 DB 를 직접 읽는다 (남의 것을 밀어 넣지 못하게).
+ */
+export async function callAssist(payload: {
+  mode: '질문' | '체크리스트'
+  taskId: string
+  question?: string
+  hint?: string
+  attachmentIds?: string[]
+  history?: { role: 'user' | 'assistant'; content: string }[]
+}): Promise<AssistReply> {
+  const { data, error } = await supabase.functions.invoke('ai-assist', { body: payload })
+
+  if (error) {
+    // 함수가 돌려준 우리말 오류를 꺼낸다. 못 꺼내면 원문을 그대로 보여 준다
+    const detail = await readFunctionError(error)
+    throw new Error(detail ?? error.message)
+  }
+  if (data?.error) throw new Error(String(data.error))
+  return data as AssistReply
+}
+
+async function readFunctionError(error: unknown): Promise<string | null> {
+  const ctx = (error as { context?: Response }).context
+  if (!ctx || typeof ctx.json !== 'function') return null
+  try {
+    const body = await ctx.json()
+    return typeof body?.error === 'string' ? body.error : null
+  } catch {
+    return null
+  }
+}
+
+// ── 대화 기록 ─────────────────────────────────────────────
+//
+// 왜 남기나 — 「내가 무엇을 물었나」가 절차의 씨앗이다.
+// 같은 걸 세 번 물었으면 그건 절차에 빠진 대목이다.
+//
+// ⚠️ 이 표는 AI 가 답변 근거로 **인용할 수 없다** (disclosure_policy).
+//    내가 AI 에게 뭘 물었는지가 가장 사적인 기록이다.
+
+export async function getThread(taskId: string): Promise<Thread | null> {
+  const { data, error } = await supabase
+    .from('assistant_threads')
+    .select('*')
+    .eq('task_id', taskId)
+    .order('last_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
+export async function ensureThread(companyId: string, taskId: string, title: string): Promise<Thread> {
+  const existing = await getThread(taskId)
+  if (existing) return existing
+
+  const userId = await currentUserId()
+  const { data, error } = await supabase
+    .from('assistant_threads')
+    .insert({ company_id: companyId, user_id: userId, task_id: taskId, title })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function listMessages(threadId: string): Promise<Message[]> {
+  const { data, error } = await supabase
+    .from('assistant_messages')
+    .select('*')
+    .eq('thread_id', threadId)
+    .order('created_at')
+  if (error) throw error
+  return data
+}
+
+export async function addMessage(input: {
+  companyId: string
+  threadId: string
+  role: '사람' | 'AI'
+  content: string
+  sources?: Source[]
+  tokensIn?: number | null
+  tokensOut?: number | null
+}): Promise<void> {
+  const userId = await currentUserId()
+  const { error } = await supabase.from('assistant_messages').insert({
+    company_id: input.companyId,
+    user_id: userId,
+    thread_id: input.threadId,
+    role: input.role,
+    content: input.content,
+    sources: (input.sources ?? []) as unknown as Json,
+    tokens_in: input.tokensIn ?? null,
+    tokens_out: input.tokensOut ?? null,
+  })
+  if (error) throw error
+
+  await supabase
+    .from('assistant_threads')
+    .update({ last_at: new Date().toISOString() })
+    .eq('id', input.threadId)
+}
+
+async function currentUserId(): Promise<string> {
+  const { data } = await supabase.auth.getUser()
+  const id = data.user?.id
+  if (!id) throw new Error('로그인 정보를 읽지 못했습니다.')
+  return id
+}

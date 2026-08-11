@@ -13,8 +13,9 @@ export default function InboxPanel() {
   const [text, setText] = useState('')
   const [promoting, setPromoting] = useState<InboxItem | null>(null)
 
+  // 바깥 여백은 놓는 쪽이 정한다 — 위로 올라가면서 아래 붙박이 여백이 걸리적거렸다
   return (
-    <div className="mt-8">
+    <div>
       <Card title="인박스" count={items?.length ?? 0}>
         <p className="text-caption text-ink-mute -mt-1 mb-3">
           분류하지 말고 던져두세요. 나중에 업무로 올리면 됩니다.

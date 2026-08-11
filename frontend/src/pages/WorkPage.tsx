@@ -1,20 +1,25 @@
 import { useState } from 'react'
 import { Card, EmptyState, PageHeader } from '../components/ui'
 import TaskList from '../features/tasks/TaskList'
+import TaskSections from '../features/tasks/TaskSections'
 import TaskBoard from '../features/tasks/TaskBoard'
 import TaskDetail from '../features/tasks/TaskDetail'
 import InboxPanel from '../features/inbox/InboxPanel'
 import SampleDataButton from '../features/seed/SampleDataButton'
 import { SAMPLE_MARK } from '../features/seed/sampleData'
 import { useTasks } from '../features/tasks/hooks'
+import { isDueToday } from '../domain/dday'
 import { TASK_STATUSES } from '../domain/types'
 
 type View = '목록' | '칸반'
 
+/** 처음 여는 자리. 전체 46건이 아니라 **지금 붙잡고 있는 것**만 보인다 */
+const DEFAULT_FILTER = '진행중'
+
 export default function WorkPage() {
   const { data: tasks, isLoading } = useTasks()
   const [view, setView] = useState<View>('목록')
-  const [filter, setFilter] = useState<string>('전체')
+  const [filter, setFilter] = useState<string>(DEFAULT_FILTER)
   /**
    * 열려 있는 업무를 **id 로만** 들고 있는다.
    *
@@ -32,6 +37,19 @@ export default function WorkPage() {
   const hasSample = all.some((t) => t.title.startsWith(SAMPLE_MARK))
   const shown = filter === '전체' ? all : all.filter((t) => t.status === filter)
 
+  // 「전체」일 때만 영역별로 묶는다. 한 상태만 볼 때는 목록이 짧아 나눌 이유가 없다
+  const grouped = filter === '전체'
+  const dueToday = all.filter((t) => isDueToday(t, today)).length
+
+  const openTask = (t: { id: string }) => {
+    setOpenEditing(false)
+    setOpenId(t.id)
+  }
+  const editTask = (t: { id: string }) => {
+    setOpenEditing(true)
+    setOpenId(t.id)
+  }
+
   return (
     <div className="max-w-[1120px]">
       <PageHeader
@@ -45,9 +63,19 @@ export default function WorkPage() {
         }
       />
 
+      {/*
+        인박스를 맨 위로 올렸다.
+        사용자가 써 보고 한 말 — *"인박스가 하단에 있어서 불편하더라"*.
+        떠오른 것을 던져두는 자리인데 스크롤을 내려야 하면 그냥 안 던진다.
+        마찰이 0에 가까워야 하는 칸이라 첫 화면에서 손이 닿는 자리에 둔다.
+      */}
+      <div className="mt-6">
+        <InboxPanel />
+      </div>
+
       {view === '목록' && (
-        <div className="flex flex-wrap gap-1.5 mt-5">
-          {(['전체', ...TASK_STATUSES] as string[]).map((s) => (
+        <div className="flex flex-wrap items-center gap-1.5 mt-8">
+          {([...TASK_STATUSES, '전체'] as string[]).map((s) => (
             <button
               key={s}
               type="button"
@@ -60,48 +88,47 @@ export default function WorkPage() {
               ].join(' ')}
             >
               {s}
-              {s !== '전체' && (
-                <span className="ml-1 text-ink-mute">
-                  {all.filter((t) => t.status === s).length}
-                </span>
-              )}
+              <span className="ml-1 text-ink-mute">
+                {s === '전체' ? all.length : all.filter((t) => t.status === s).length}
+              </span>
             </button>
           ))}
+
+          {dueToday > 0 && (
+            <span className="text-caption text-ink font-semibold border border-ink rounded-full px-3 py-1 ml-2">
+              오늘 마감 {dueToday}
+            </span>
+          )}
         </div>
       )}
 
-      <div className="mt-5">
+      <div className="mt-4">
         {isLoading ? (
           <p className="text-caption text-ink-mute">불러오는 중…</p>
         ) : view === '칸반' ? (
-          <TaskBoard tasks={all} today={today} onOpen={(t) => setOpenId(t.id)} />
+          <TaskBoard tasks={all} today={today} onOpen={openTask} />
         ) : shown.length === 0 ? (
           <Card>
             <EmptyState
-              message={filter === '전체' ? '아직 업무가 없습니다.' : `「${filter}」 업무가 없습니다.`}
-              hint="사이드바의 「＋ 새 업무」로 만들거나, 아래 인박스에 던져두고 올리세요."
-              action={!hasSample ? <SampleDataButton has={false} /> : undefined}
+              message={
+                filter === '전체' ? '아직 업무가 없습니다.' : `「${filter}」 업무가 없습니다.`
+              }
+              hint={
+                filter === DEFAULT_FILTER && all.length > 0
+                  ? `업무 ${all.length}건이 다른 상태에 있습니다. 위에서 「전체」를 눌러 보세요.`
+                  : '위 인박스에 던져두었다가 업무로 올려도 됩니다.'
+              }
+              action={!hasSample && all.length === 0 ? <SampleDataButton has={false} /> : undefined}
             />
           </Card>
+        ) : grouped ? (
+          <TaskSections tasks={shown} today={today} onOpen={openTask} onEdit={editTask} />
         ) : (
           <Card>
-            <TaskList
-              tasks={shown}
-              today={today}
-              onOpen={(t) => {
-                setOpenEditing(false)
-                setOpenId(t.id)
-              }}
-              onEdit={(t) => {
-                setOpenEditing(true)
-                setOpenId(t.id)
-              }}
-            />
+            <TaskList tasks={shown} today={today} onOpen={openTask} onEdit={editTask} />
           </Card>
         )}
       </div>
-
-      <InboxPanel />
 
       {open && (
         <TaskDetail

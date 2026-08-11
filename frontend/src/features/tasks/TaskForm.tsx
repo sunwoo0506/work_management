@@ -1,10 +1,16 @@
 import { useState } from 'react'
 import { Field, PillButton, Select, TextArea, TextInput } from '../../components/Field'
+import { GuideHint } from '../../components/GuideHint'
+import { ProgressBar } from '../../components/ui'
+import { checklistCount } from '../../domain/progress'
+import { priorityLabel, priorityMeaning } from '../../domain/priority'
 import {
   AREAS, PRIORITIES, REQUESTED_SOURCES, TASK_SOURCES, TASK_STATUSES,
 } from '../../domain/types'
 import type { TaskSource } from '../../domain/types'
 import { useDirectives } from '../directives/hooks'
+import { GUIDES } from './guides'
+import { useChecklist } from './hooks'
 import type { Task, TaskInsert } from './api'
 
 export type TaskFormValues = Omit<TaskInsert, 'user_id' | 'company_id'>
@@ -22,6 +28,7 @@ export default function TaskForm({
   busy?: boolean
 }) {
   const { data: directives } = useDirectives()
+  const { data: checklist } = useChecklist(initial?.id ?? null)
   const [v, setV] = useState<TaskFormValues>({
     title: initial?.title ?? '',
     detail: initial?.detail ?? '',
@@ -45,6 +52,8 @@ export default function TaskForm({
     setV((prev) => ({ ...prev, [k]: val }))
 
   const isRequested = REQUESTED_SOURCES.includes(v.source as TaskSource)
+  const { done, total } = checklistCount(checklist ?? [])
+  const byChecklist = total > 0
 
   // 설계서 §4.2 — 요청받은 업무는 회신 내용을 적어야 닫힌다
   const blockedByReply =
@@ -73,13 +82,32 @@ export default function TaskForm({
         />
       </Field>
 
-      <Field label="상세" hint="이 일이 무엇인가 — 시작하기 전에 적습니다">
-        <TextArea rows={4} value={v.detail ?? ''} onChange={(e) => set('detail', e.target.value)} />
-      </Field>
+      {/* 안내 문구는 guides.ts 한 곳에서 온다. 화면마다 따로 쓰면 문구끼리 어긋난다 */}
+      <div>
+        <span className="block text-caption text-ink-soft mb-1.5">상세</span>
+        <GuideHint guide={GUIDES.detail} />
+        <TextArea
+          rows={4}
+          value={v.detail ?? ''}
+          onChange={(e) => set('detail', e.target.value)}
+          placeholder={GUIDES.detail.placeholder}
+          aria-label="상세"
+          className="mt-2"
+        />
+      </div>
 
-      <Field label="작업 메모" hint="하면서 알게 된 것 — 상세 화면에서도 바로 쓸 수 있습니다">
-        <TextArea rows={4} value={v.notes ?? ''} onChange={(e) => set('notes', e.target.value)} />
-      </Field>
+      <div>
+        <span className="block text-caption text-ink-soft mb-1.5">작업 메모</span>
+        <GuideHint guide={GUIDES.notes} />
+        <TextArea
+          rows={4}
+          value={v.notes ?? ''}
+          onChange={(e) => set('notes', e.target.value)}
+          placeholder={GUIDES.notes.placeholder}
+          aria-label="작업 메모"
+          className="mt-2"
+        />
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="출처">
@@ -93,9 +121,12 @@ export default function TaskForm({
             {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
           </Select>
         </Field>
-        <Field label="중요도">
+        {/* 저장값은 그대로 P0·P1·P2 다. 고를 때만 사람 말로 보여 준다 */}
+        <Field label="중요도" hint={priorityMeaning(v.priority ?? 'P1')}>
           <Select value={v.priority} onChange={(e) => set('priority', e.target.value)}>
-            {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+            {PRIORITIES.map((p) => (
+              <option key={p} value={p}>{priorityLabel(p)}</option>
+            ))}
           </Select>
         </Field>
         <Field label="상태">
@@ -119,17 +150,37 @@ export default function TaskForm({
         </Field>
       </div>
 
-      <Field label="진행률" hint={`${v.progress ?? 0}%`}>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={5}
-          value={v.progress ?? 0}
-          onChange={(e) => set('progress', Number(e.target.value))}
-          className="w-full accent-[#0066cc]"
-        />
-      </Field>
+      {/*
+        진행률 — 체크리스트가 있으면 손을 못 대게 잠근다.
+        둘 다 열어 두면 어느 쪽이 맞는지 알 수 없다.
+        체크리스트가 없을 때만 사람이 정한다.
+      */}
+      {byChecklist ? (
+        <Field
+          label="진행률"
+          hint="상세 화면에서 항목을 체크하면 이 막대가 따라 움직입니다"
+        >
+          {/* 개수는 체크리스트에서 직접 센다. 퍼센트를 거꾸로 나눠 복원하면 반올림에 어긋난다 */}
+          <ProgressBar
+            pct={v.progress ?? 0}
+            label={`체크리스트 ${done} / ${total}`}
+          />
+        </Field>
+      ) : (
+        <Field label="진행률" hint="체크리스트를 만들면 그때부터 자동 계산됩니다">
+          <ProgressBar pct={v.progress ?? 0} label="손으로 정한 값" />
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={v.progress ?? 0}
+            onChange={(e) => set('progress', Number(e.target.value))}
+            className="w-full accent-[#0066cc] mt-2"
+            aria-label="진행률"
+          />
+        </Field>
+      )}
 
       <Field label="지시사항 연결">
         <Select
@@ -175,13 +226,21 @@ export default function TaskForm({
               />
             </Field>
           </div>
-          <Field label="회신 내용" hint="이걸 적어야 「완료」로 닫을 수 있습니다">
+          <div>
+            <span className="block text-caption text-ink-soft mb-1.5">회신 내용</span>
+            <GuideHint guide={GUIDES.reply} />
             <TextArea
               rows={3}
               value={v.reply_body ?? ''}
               onChange={(e) => set('reply_body', e.target.value)}
+              placeholder={GUIDES.reply.placeholder}
+              aria-label="회신 내용"
+              className="mt-2"
             />
-          </Field>
+            <span className="block text-caption text-ink-mute mt-1">
+              이걸 적어야 「완료」로 닫을 수 있습니다
+            </span>
+          </div>
         </fieldset>
       )}
 

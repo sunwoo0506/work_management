@@ -1,11 +1,28 @@
-import { useEffect, useState } from 'react'
-import { PillButton, TextArea, TextInput } from '../../components/Field'
+import { useState } from 'react'
+import { PillButton } from '../../components/Field'
+import { ProgressBar } from '../../components/ui'
+import { checklistCount } from '../../domain/progress'
+import { priorityLabel } from '../../domain/priority'
 import { REQUESTED_SOURCES } from '../../domain/types'
 import type { TaskSource } from '../../domain/types'
-import { useChecklist, useChecklistMutations, useDeleteTask, useUpdateTask } from './hooks'
+import AttachmentPanel from '../attachments/AttachmentPanel'
+import AssistantPanel from '../assistant/AssistantPanel'
+import { useChecklist, useDeleteTask, useUpdateTask } from './hooks'
+import { GUIDES } from './guides'
+import TaskChecklist from './TaskChecklist'
+import TaskTextSection from './TaskTextSection'
 import TaskForm from './TaskForm'
 import type { Task } from './api'
 
+/**
+ * 업무 서랍.
+ *
+ * 위에서 아래로 일하는 순서를 따른다 —
+ *   무엇인가(상세) → 뭘 해야 하나(체크리스트) → 자료(첨부) → 막히면(AI) → 알게 된 것(메모)
+ *
+ * 「작업 메모」가 맨 아래인 이유 — 그건 일이 끝나갈 때 적는 칸이다.
+ * 위에 두면 빈 칸이 먼저 보이고 무엇을 적어야 할지 모른다.
+ */
 export default function TaskDetail({
   task,
   onClose,
@@ -20,11 +37,16 @@ export default function TaskDetail({
   const [confirming, setConfirming] = useState(false)
   const update = useUpdateTask()
   const remove = useDeleteTask()
+  const { data: checklist } = useChecklist(task.id)
+  const isRequested = REQUESTED_SOURCES.includes(task.source as TaskSource)
+
+  const { done, total } = checklistCount(checklist ?? [])
+  const progressNote = total > 0 ? `체크리스트 ${done} / ${total}` : '손으로 정한 값'
 
   return (
     <div className="fixed inset-0 bg-ink/20 z-50 flex justify-end" onClick={onClose}>
       <div
-        className="bg-canvas w-full max-w-[560px] h-full overflow-y-auto p-8"
+        className="bg-canvas w-full max-w-[620px] h-full overflow-y-auto p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -48,33 +70,55 @@ export default function TaskDetail({
           </div>
         ) : (
           <>
-            <dl className="mt-6 grid grid-cols-[88px_1fr] gap-y-2.5 text-body">
+            <dl className="mt-6 grid grid-cols-[88px_1fr] gap-y-2.5 text-body items-baseline">
               <Row label="출처" value={task.source} />
               <Row label="상태" value={task.status} />
-              <Row label="중요도" value={task.priority} />
+              <Row label="중요도" value={priorityLabel(task.priority)} />
               <Row label="영역" value={task.area ?? '—'} />
               <Row label="기한" value={task.due_date ?? '—'} />
-              <Row label="진행률" value={`${task.progress}%`} />
-              {REQUESTED_SOURCES.includes(task.source as TaskSource) && (
-                <>
-                  <Row label="요청자" value={task.requester ?? '—'} />
-                  <Row label="회신" value={task.reply_body ?? '(아직 없음)'} />
-                </>
-              )}
+              {isRequested && <Row label="요청자" value={task.requester ?? '—'} />}
+
+              <dt className="text-caption text-ink-mute pt-1">진행률</dt>
+              <dd className="text-ink">
+                <ProgressBar pct={task.progress} label={progressNote} />
+              </dd>
             </dl>
 
-            {task.detail && (
-              <section className="mt-5">
-                <h3 className="text-caption text-ink-mute">상세</h3>
-                <p className="text-body text-ink-soft mt-1 whitespace-pre-wrap leading-relaxed">
-                  {task.detail}
+            <TaskTextSection task={task} field="detail" label="상세" guide={GUIDES.detail} />
+
+            <TaskChecklist task={task} />
+
+            <AttachmentPanel taskId={task.id} />
+
+            <AssistantPanel task={task} />
+
+            <TaskTextSection
+              task={task}
+              field="notes"
+              label="작업 메모"
+              guide={GUIDES.notes}
+              footer={
+                <p className="text-caption text-ink-mute mt-1.5 leading-relaxed">
+                  여기 쌓인 것이 나중에 <strong className="font-semibold">절차</strong>가 됩니다. 같은 일을
+                  세 번 하면 이 메모를 근거로 절차 초안을 제안합니다.
                 </p>
-              </section>
+              }
+            />
+
+            {isRequested && (
+              <TaskTextSection
+                task={task}
+                field="reply_body"
+                label="회신"
+                guide={GUIDES.reply}
+                rows={3}
+                footer={
+                  <p className="text-caption text-ink-mute mt-1.5 leading-relaxed">
+                    요청받은 업무는 이 칸을 적어야 <strong className="font-semibold">「완료」로 닫을 수</strong> 있습니다.
+                  </p>
+                }
+              />
             )}
-
-            <Notes task={task} />
-
-            <Checklist task={task} />
 
             {confirming ? (
               <DeleteConfirm
@@ -85,7 +129,7 @@ export default function TaskDetail({
                 onConfirm={() => remove.mutate(task, { onSuccess: onClose })}
               />
             ) : (
-              <div className="flex flex-wrap gap-2 mt-8">
+              <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-hairline">
                 <PillButton type="button" onClick={() => setEditing(true)}>수정</PillButton>
                 <ShareButton />
                 <PillButton type="button" variant="ghost" onClick={() => setConfirming(true)}>
@@ -104,7 +148,7 @@ export default function TaskDetail({
  * 삭제 확인.
  *
  * 브라우저 기본 확인창을 안 쓴다. 그 창은 "이 업무를 삭제할까요?" 한 줄뿐이라
- * **같이 사라지는 것**을 못 보여준다. 체크리스트는 딸려서 함께 지워진다.
+ * **같이 사라지는 것**을 못 보여준다. 체크리스트와 첨부파일이 딸려서 함께 지워진다.
  *
  * 실행이력에는 「무엇을 언제 지웠나」가 남는다 — 업무는 사라져도 기록은 남는다.
  */
@@ -132,6 +176,7 @@ function DeleteConfirm({
       <ul className="mt-2.5 space-y-1 text-caption text-ink-soft leading-relaxed">
         <li>· 업무 「{task.title}」</li>
         {count > 0 && <li>· 체크리스트 {count}건이 함께 지워집니다</li>}
+        <li>· 붙여 둔 첨부파일과 AI 대화도 함께 지워집니다</li>
         {fromProcedure && (
           <li className="text-ink-mute">
             · 이 업무는 절차 회차에서 나왔습니다. <strong className="font-semibold">회차 기록은 남습니다</strong>
@@ -181,115 +226,5 @@ function ShareButton() {
         </span>
       )}
     </span>
-  )
-}
-
-/**
- * 작업 메모.
- *
- * 「상세」와 다르다 —
- *   상세 = 이 일이 무엇인가.  시작하기 전에 적는다
- *   메모 = 하면서 알게 된 것.  하는 중에 쌓인다
- *
- * 수정 화면을 열지 않고 여기서 바로 쓴다. 일하다 알게 된 것을 적으려고
- * 폼을 열어 열두 칸을 지나가야 하면 안 적게 된다.
- *
- * 자동저장을 안 하는 이유 — 저장됐는지가 안 보인다. 바꾼 게 있을 때만
- * 저장 버튼이 뜨고, 누르면 사라진다. 그게 저장됐다는 신호다.
- */
-function Notes({ task }: { task: Task }) {
-  const update = useUpdateTask()
-  const saved = task.notes ?? ''
-  const [draft, setDraft] = useState(saved)
-  useEffect(() => setDraft(saved), [saved])
-  const dirty = draft !== saved
-
-  return (
-    <section className="mt-8">
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-caption text-ink-mute">작업 메모</h3>
-        {dirty && (
-          <button
-            type="button"
-            disabled={update.isPending}
-            onClick={() => update.mutate({ before: task, patch: { notes: draft || null } })}
-            className="text-caption text-action font-semibold disabled:opacity-40"
-          >
-            {update.isPending ? '저장 중…' : '저장'}
-          </button>
-        )}
-      </div>
-
-      <TextArea
-        rows={5}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        placeholder="하면서 알게 된 것 · 누구에게 뭘 물었나 · 막힌 지점 · 다음에 할 것"
-        className="mt-1.5"
-        aria-label="작업 메모"
-      />
-
-      <p className="text-caption text-ink-mute mt-1.5 leading-relaxed">
-        여기 쌓인 것이 나중에 <strong className="font-semibold">절차</strong>가 됩니다. 같은 일을
-        세 번 하면 이 메모를 근거로 절차 초안을 제안합니다.
-      </p>
-
-      {update.isError && (
-        <p className="text-caption text-alert mt-1.5" role="alert">
-          저장하지 못했습니다 —{' '}
-          {update.error instanceof Error ? update.error.message : String(update.error)}
-        </p>
-      )}
-    </section>
-  )
-}
-
-function Checklist({ task }: { task: Task }) {
-  const { data: items } = useChecklist(task.id)
-  const m = useChecklistMutations(task.id)
-  const [label, setLabel] = useState('')
-
-  return (
-    <section className="mt-8">
-      <h3 className="text-caption text-ink-mute">체크리스트</h3>
-      <ul className="mt-2 space-y-1.5">
-        {(items ?? []).map((c) => (
-          <li key={c.id} className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={c.done}
-              onChange={(e) => m.toggle.mutate({ id: c.id, done: e.target.checked })}
-              className="accent-[#0066cc]"
-            />
-            <span className={`text-body flex-1 ${c.done ? 'text-ink-mute line-through' : ''}`}>
-              {c.label}
-            </span>
-            <button
-              type="button"
-              onClick={() => m.remove.mutate(c.id)}
-              className="text-caption text-ink-mute"
-            >
-              ×
-            </button>
-          </li>
-        ))}
-      </ul>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          const v = label.trim()
-          if (!v) return
-          m.add.mutate({ label: v, sortOrder: items?.length ?? 0 }, { onSuccess: () => setLabel('') })
-        }}
-        className="mt-2"
-      >
-        <TextInput
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="항목 추가 후 엔터"
-          aria-label="체크리스트 항목 추가"
-        />
-      </form>
-    </section>
   )
 }

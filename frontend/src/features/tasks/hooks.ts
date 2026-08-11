@@ -95,25 +95,47 @@ export function useChecklist(taskId: string | null) {
   })
 }
 
+/**
+ * 체크리스트를 건드리면 **진행률이 따라 움직인다.**
+ *
+ * 진행률 막대를 손으로 끄는 건 근거 없는 숫자를 만드는 일이다.
+ * 체크 하나가 곧 진행률이므로, 모든 변경 뒤에 다시 맞춘다
+ * — 항목을 지워도 분모가 바뀌니 다시 맞춰야 한다.
+ */
 export function useChecklistMutations(taskId: string | null) {
   const qc = useQueryClient()
   const companyId = useCompanyId()
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['checklist', taskId] })
+
+  const after = async () => {
+    if (taskId) await api.syncProgress(taskId)
+    void qc.invalidateQueries({ queryKey: ['checklist', taskId] })
+    void qc.invalidateQueries({ queryKey: ['tasks', companyId ?? ''] })
+  }
 
   return {
     add: useMutation({
       mutationFn: ({ label, sortOrder }: { label: string; sortOrder: number }) =>
         api.addChecklistItem(companyId as string, taskId as string, label, sortOrder),
-      onSuccess: invalidate,
+      onSuccess: after,
+    }),
+    addMany: useMutation({
+      mutationFn: ({ labels, startOrder }: { labels: string[]; startOrder: number }) =>
+        api.addChecklistItems(companyId as string, taskId as string, labels, startOrder),
+      onSuccess: after,
     }),
     toggle: useMutation({
       mutationFn: ({ id, done }: { id: string; done: boolean }) =>
         api.toggleChecklistItem(id, done),
-      onSuccess: invalidate,
+      onSuccess: after,
+    }),
+    rename: useMutation({
+      mutationFn: ({ id, label }: { id: string; label: string }) =>
+        api.renameChecklistItem(id, label),
+      onSuccess: after,
     }),
     remove: useMutation({
       mutationFn: (id: string) => api.removeChecklistItem(id),
-      onSuccess: invalidate,
+      onSuccess: after,
     }),
   }
 }

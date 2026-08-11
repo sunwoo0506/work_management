@@ -3,7 +3,7 @@ import {
 } from '@dnd-kit/core'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { BOARD_STATUSES } from '../../domain/types'
-import { daysUntil, ddayLabel, scheduleOf } from '../../domain/dday'
+import { daysUntil, ddayLabel, isDueToday, scheduleOf } from '../../domain/dday'
 import { sortTasks } from '../../domain/sort'
 import { PriorityBadge, ScheduleBadge } from '../../components/Badge'
 import { useChangeStatus } from './hooks'
@@ -106,6 +106,7 @@ function Column({
 function Card({ task, today, onOpen }: { task: Task; today: Date; onOpen: (t: Task) => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id })
   const schedule = scheduleOf(task, today)
+  const todayDue = isDueToday(task, today)
 
   return (
     <div
@@ -115,14 +116,20 @@ function Card({ task, today, onOpen }: { task: Task; today: Date; onOpen: (t: Ta
       onClick={() => onOpen(task)}
       style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined}
       className={[
-        'bg-canvas border border-hairline rounded-md p-3 cursor-grab select-none',
+        'bg-canvas rounded-md p-3 cursor-grab select-none border',
+        // 목록과 같은 규칙 — 오늘 마감은 색이 아니라 테두리 굵기로 세운다
+        todayDue ? 'border-ink' : 'border-hairline',
         isDragging ? 'opacity-50' : '',
       ].join(' ')}
     >
-      <p className="text-body leading-snug">{task.title}</p>
+      <p className={`text-body leading-snug ${todayDue ? 'font-semibold' : ''}`}>{task.title}</p>
       <div className="flex items-center gap-1.5 mt-2">
         <PriorityBadge priority={task.priority} />
-        <ScheduleBadge schedule={schedule} label={ddayLabel(daysUntil(task.due_date, today))} />
+        <ScheduleBadge
+          schedule={schedule}
+          label={ddayLabel(daysUntil(task.due_date, today))}
+          today={todayDue}
+        />
       </div>
     </div>
   )
