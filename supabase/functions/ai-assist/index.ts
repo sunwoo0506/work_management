@@ -2,7 +2,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { getProvider } from '../_shared/provider/index.ts'
 import type { ChatMessage } from '../_shared/provider/index.ts'
-import { ASK_RULES, ASK_RULES_WEB, CHECKLIST_RULES } from './prompt.ts'
+import { ASK_RULES, ASK_RULES_WEB, CHECKLIST_RULES, FOCUS_REMINDER } from './prompt.ts'
 
 /**
  * AI 업무 비서 — 브라우저와 AI 공급자 사이에 서는 유일한 자리.
@@ -74,7 +74,12 @@ Deno.serve(async (req) => {
             { role: 'system', content: webSearch ? ASK_RULES_WEB : ASK_RULES },
             { role: 'system', content: ctx.text },
             ...history(body?.history),
-            { role: 'user', content: String(body?.question ?? '').slice(0, 4000) },
+            {
+              role: 'user',
+              // 지킬 것을 **질문 바로 옆에** 한 번 더 붙인다.
+              // 맨 위 규칙만으로는 안 들었다 — 그 사이에 첨부파일 수만 자가 끼어 묽어진다.
+              content: String(body?.question ?? '').slice(0, 4000) + FOCUS_REMINDER,
+            },
           ]
         : [
             { role: 'system', content: CHECKLIST_RULES },
