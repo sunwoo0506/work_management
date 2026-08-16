@@ -145,7 +145,7 @@ function NewForm({
         onSubmit(v)
       }}
     >
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="표기" hint="역할로">
           <TextInput value={v.name} onChange={set('name')} placeholder="예: 구매사업본부 담당자" />
         </Field>
@@ -156,7 +156,7 @@ function NewForm({
           <TextInput value={v.role} onChange={set('role')} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="전화">
           <TextInput value={v.phone} onChange={set('phone')} />
         </Field>

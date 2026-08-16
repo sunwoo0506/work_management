@@ -131,14 +131,14 @@ export default function ReportPanel() {
         <Card><EmptyState message="집계를 불러오는 중…" /></Card>
       ) : (
         <>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <StatTile label="완료한 업무" value={snap.doneCount} />
             <StatTile label="기한 넘김" value={snap.overdueCount} warn />
             <StatTile label="끝낸 회차" value={snap.runsFinished} />
             <StatTile label="확인한 예외" value={snap.exceptionsHandled} />
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <Card title="영역별 완료">
               {snap.byArea.length === 0 ? (
                 <p className="text-caption text-ink-mute py-1">완료한 업무가 없습니다.</p>

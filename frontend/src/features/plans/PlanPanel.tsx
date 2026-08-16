@@ -96,7 +96,7 @@ export default function PlanPanel() {
         onPlace={(taskId, date) => place.mutate({ taskId, date })}
       />
 
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <NoteBox
           title="메모"
           hint="이 기간에 신경 쓸 것"
@@ -195,8 +195,11 @@ function WeekBoard({
   const slots = layoutWeek(ref_, tasks)
   const today = ymd(new Date())
 
+  // 주간표는 7칸을 줄이지 않는다 — 요일이 뭉개지면 표가 아니다.
+  // 좁은 화면에서는 옆으로 밀어 본다
   return (
-    <div className="grid grid-cols-7 gap-2">
+    <div className="overflow-x-auto">
+    <div className="grid grid-cols-7 gap-2 min-w-[640px]">
       {slots.map((s) => (
         <div
           key={s.date}
@@ -227,6 +230,7 @@ function WeekBoard({
           </ul>
         </div>
       ))}
+    </div>
     </div>
   )
 }
@@ -264,7 +268,7 @@ function MonthBoard({ ref_, tasks }: { ref_: Date; tasks: PlanTask[] }) {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-5">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       {[...weeks.entries()].sort().map(([label, list]) => (
         <Card key={label} title={label} count={list.length}>
           <ul className="space-y-1.5">

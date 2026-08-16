@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatResult, Provider, WebSource } from './types.ts'
+import { explainFailure } from './failure.ts'
 
 /**
  * OpenAI 어댑터.
@@ -60,8 +61,9 @@ export function createOpenAI(): Provider {
 
       if (!res.ok) {
         const body = await res.text()
-        // 열쇠 값이 오류 메시지에 섞여 나가지 않게 앞부분만 잘라 올린다
-        throw new Error(`AI 호출 실패 (${res.status}) — ${body.slice(0, 400)}`)
+        // 숫자만 던지지 않는다 — 429 하나에 「몰림」과 「잔액 없음」이 같이 들어 있어서,
+        // 사용자가 기다릴 일인지 충전할 일인지 화면만 보고는 알 수 없었다 (2026-08-16)
+        throw new Error(explainFailure(res.status, body).error)
       }
 
       const json = await res.json()

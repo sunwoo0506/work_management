@@ -47,7 +47,7 @@ export default function BasePage() {
 
       <div className="mt-5">
         {view === '지시사항' && (
-          <div className="grid grid-cols-[1fr_320px] gap-5 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 items-start">
             <Card title="지시사항" count={directives?.length ?? 0}>
               <p className="text-caption text-ink-mute mb-3">
                 줄을 누르면 <strong className="font-semibold">무엇을 · 왜 먼저인가 · 딸린 업무</strong>가

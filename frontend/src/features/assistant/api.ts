@@ -48,7 +48,8 @@ export async function callAssist(payload: {
   return data as AssistReply
 }
 
-async function readFunctionError(error: unknown): Promise<string | null> {
+/** 함수가 돌려준 우리말 오류를 꺼낸다. 회의록 쪽에서도 같은 방식으로 쓴다 */
+export async function readFunctionError(error: unknown): Promise<string | null> {
   const ctx = (error as { context?: Response }).context
   if (!ctx || typeof ctx.json !== 'function') return null
   try {

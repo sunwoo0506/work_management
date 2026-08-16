@@ -189,7 +189,7 @@ function NewForm({
       <Field label="이름">
         <TextInput value={v.name} onChange={set('name')} placeholder="예: 회생 절차 종결" />
       </Field>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="구분">
           <TextInput value={v.category} onChange={set('category')} />
         </Field>

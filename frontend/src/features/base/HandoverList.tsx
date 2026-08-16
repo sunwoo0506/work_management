@@ -188,7 +188,7 @@ function NewForm({
       <Field label="항목">
         <TextInput value={v.item} onChange={set('item')} placeholder="무엇을 넘겨받아야 하나" />
       </Field>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="분류">
           <TextInput value={v.category} onChange={set('category')} />
         </Field>

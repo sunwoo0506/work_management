@@ -80,7 +80,7 @@ export default function TodayPage() {
         right={<SampleDataButton has={hasSample} />}
       />
 
-      <div className="grid grid-cols-4 gap-3 mt-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
         <StatTile label="할 일" value={live.length} />
         <StatTile label="지연" value={overdue.length} warn />
         <StatTile label="회신 대기" value={awaitingReply.length} />
@@ -90,7 +90,7 @@ export default function TodayPage() {
       {isLoading ? (
         <p className="text-caption text-ink-mute mt-6">불러오는 중…</p>
       ) : (
-        <div className="grid grid-cols-[1fr_320px] gap-5 mt-5 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 mt-5 items-start">
           {/* 왼쪽 — 하루의 순서 */}
           <div className="space-y-5">
             <YesterdayCard today={today} />

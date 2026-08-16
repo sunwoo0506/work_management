@@ -109,7 +109,7 @@ export default function TaskForm({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="출처">
           <Select value={v.source} onChange={(e) => set('source', e.target.value)}>
             {TASK_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -197,7 +197,7 @@ export default function TaskForm({
       {isRequested && (
         <fieldset className="bg-parchment rounded-lg p-4 border border-hairline space-y-4">
           <legend className="text-caption text-ink-mute px-1">요청 정보</legend>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="요청자" hint="실명이 아니라 역할로 적습니다">
               <TextInput
                 placeholder="예: 구매사업본부 담당자"

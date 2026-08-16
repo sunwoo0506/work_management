@@ -1,15 +1,19 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Card, LaterNote, PageHeader } from '../components/ui'
+import { Card, PageHeader } from '../components/ui'
 import { PillButton } from '../components/Field'
 import DailyLogPanel from '../features/daily/DailyLogPanel'
 import { shiftDays, ymd } from '../domain/daily'
 import ReportPanel from '../features/reports/ReportPanel'
 import MeetingList from '../features/meetings/MeetingList'
+import LiveMeeting from '../features/meetings/LiveMeeting'
 import CallList from '../features/meetings/CallList'
 
 const VIEWS = ['업무일지', '리포트', '회의록', '전화메모'] as const
 type View = (typeof VIEWS)[number]
+
+const MEETING_MODES = ['🎙 실시간', '✍ 직접 쓰기'] as const
+type MeetingMode = (typeof MEETING_MODES)[number]
 
 function isView(v: string | null): v is View {
   return VIEWS.includes(v as View)
@@ -17,6 +21,7 @@ function isView(v: string | null): v is View {
 
 export default function RecordPage() {
   const [offset, setOffset] = useState(0)
+  const [mode, setMode] = useState<MeetingMode>('🎙 실시간')
   // 빠른 입력에서 「＋ 회의록」을 누르면 /record?view=회의록 으로 들어온다
   const [params, setParams] = useSearchParams()
   const raw = params.get('view')
@@ -80,21 +85,44 @@ export default function RecordPage() {
       )}
 
       {view === '회의록' && (
-        <div className="grid grid-cols-[1fr_320px] gap-5 mt-5 items-start">
-          <MeetingList />
-          <Card title="녹음은 아직입니다">
-            <p className="text-body text-ink-soft leading-relaxed">
-              폰으로 녹음한 파일을 올리면 회의록이 되는 기능은{' '}
-              <strong className="font-semibold">브라우저만으로는 안 됩니다.</strong>
-            </p>
-            <p className="text-caption text-ink-mute mt-2 leading-relaxed">
-              음성을 글로 바꾸는 일은 컴퓨터에서 따로 도는 프로그램이 필요합니다. 그때까지는
-              전사문을 붙여넣어 주세요.
-            </p>
-            <div className="mt-3">
-              <LaterNote stage="미정">녹음 자동 전사 — 설계서 OQ-14</LaterNote>
+        <div className="mt-5">
+          {/*
+            두 갈래를 나란히 둔다.
+            「직접 쓰기」를 지우지 않는 이유 — 받아쓰기가 안 되는 브라우저,
+            마이크가 없는 자리, 그리고 **민감 회의(회생·인사)** 에서는 여전히 유일한 길이다.
+          */}
+          <div className="flex gap-1.5 mb-5">
+            {MEETING_MODES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={[
+                  'text-caption rounded-full px-3 py-1.5 border',
+                  mode === m
+                    ? 'text-action border-action font-semibold'
+                    : 'text-ink-mute border-hairline hover:text-ink',
+                ].join(' ')}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+
+          {mode === '🎙 실시간' ? (
+            <LiveMeeting />
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 items-start">
+              <MeetingList />
+              <Card title="직접 쓰기는 언제 쓰나">
+                <ul className="space-y-2 text-caption text-ink-mute leading-relaxed">
+                  <li>· 지나간 회의를 나중에 적을 때</li>
+                  <li>· 다른 도구로 이미 전사한 글이 있을 때</li>
+                  <li>· 받아쓰기가 안 되는 브라우저에서 (파이어폭스 등)</li>
+                </ul>
+              </Card>
             </div>
-          </Card>
+          )}
         </div>
       )}
 
@@ -105,7 +133,7 @@ export default function RecordPage() {
       )}
 
       {view === '업무일지' && (
-        <div className="grid grid-cols-[1fr_320px] gap-5 mt-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 mt-6 items-start">
           <div>
             <h2 className="text-tagline font-semibold mb-4">
               업무일지 <span className="text-ink-mute font-normal">{dateStr}</span>

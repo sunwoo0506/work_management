@@ -42,7 +42,7 @@ export default function ProcedurePage() {
         }
       />
 
-      <div className="grid grid-cols-[1fr_320px] gap-5 mt-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 mt-6 items-start">
         <div className="space-y-5">
           <Card title="절차" count={list.length}>
             {isLoading ? (

@@ -158,7 +158,7 @@ function NewForm({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (v: C
         onSubmit(v)
       }}
     >
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Field label="수신/발신">
           <Select value={v.direction} onChange={set('direction')}>
             <option value="수신">수신</option>

@@ -30,7 +30,7 @@ export default function ProcedureDetail({
   return (
     <div className="fixed inset-0 bg-ink/20 z-50 flex justify-end" onClick={onClose}>
       <div
-        className="bg-canvas w-full max-w-[680px] h-full overflow-y-auto p-8"
+        className="bg-canvas w-full max-w-[680px] h-full overflow-y-auto p-5 lg:p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
@@ -230,7 +230,7 @@ function StepEditor({ procedureId, steps }: { procedureId: string; steps: Proced
                     }
                   />
                 </label>
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <label className="block">
                     <span className="block text-caption text-ink-soft mb-1">필요 자료</span>
                     <TextInput

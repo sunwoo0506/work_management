@@ -1048,49 +1048,61 @@ export type Database = {
       meetings: {
         Row: {
           agenda: string | null
+          ai_draft: Json | null
           attendees: string | null
           company_id: string
           created_at: string
           decisions: string | null
+          duration_sec: number | null
           follow_ups: Json
           id: string
           met_on: string
+          my_notes: string | null
           place: string | null
           sensitive: boolean
           title: string
           transcript: string | null
+          transcript_source: string
           updated_at: string
           user_id: string
         }
         Insert: {
           agenda?: string | null
+          ai_draft?: Json | null
           attendees?: string | null
           company_id: string
           created_at?: string
           decisions?: string | null
+          duration_sec?: number | null
           follow_ups?: Json
           id?: string
           met_on: string
+          my_notes?: string | null
           place?: string | null
           sensitive?: boolean
           title: string
           transcript?: string | null
+          transcript_source?: string
           updated_at?: string
           user_id: string
         }
         Update: {
           agenda?: string | null
+          ai_draft?: Json | null
           attendees?: string | null
           company_id?: string
           created_at?: string
           decisions?: string | null
+          duration_sec?: number | null
           follow_ups?: Json
           id?: string
           met_on?: string
+          my_notes?: string | null
           place?: string | null
           sensitive?: boolean
           title?: string
           transcript?: string | null
+          transcript_source?: string
           updated_at?: string
           user_id?: string
         }

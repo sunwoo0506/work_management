@@ -10,13 +10,13 @@ import { useCompanyId } from '../companies/useCompany'
 type Meeting = Row<'meetings'>
 
 /**
- * 회의록.
+ * 회의록 — 직접 쓰기.
  *
- * 녹음 자동 전사는 아직 없다 (OQ-14) — 브라우저가 못 하는 일이라
- * 로컬에서 도는 별도 프로그램이 필요하다. 그때까지는 전사문을 붙여넣는다.
+ * 회의 중에 듣게 하려면 옆의 「🎙 실시간」을 쓴다 (LiveMeeting.tsx).
+ * 이 화면은 **지나간 회의를 나중에 적거나, 다른 도구로 전사한 글을 옮겨 담는 자리**다.
  *
- * ⚠️ 민감 회의(회생·인사)는 「민감」을 켜고 전사문을 넣지 않는다.
- *    설계서 §5.8 — 그런 내용은 Supabase 에도 저장하지 않는다.
+ * 「민감」은 표시로만 남는다. 전사문을 버리던 예전 동작은 걷어냈다 —
+ * 사용자 판단 (2026-08-16). 아래 저장 부분 주석 참고.
  */
 export default function MeetingList() {
   const companyId = useCompanyId()
@@ -54,8 +54,13 @@ export default function MeetingList() {
         attendees: v.attendees || null,
         agenda: v.agenda || null,
         decisions: v.decisions || null,
-        // 민감 회의는 전사문을 저장하지 않는다 (설계서 §5.8)
-        transcript: v.sensitive ? null : v.transcript || null,
+        /*
+          예전에는 민감 회의면 전사문을 버렸다 (설계서 §5.8).
+          지금은 **일반 회의와 같은 길로 저장한다** — 사용자 판단으로
+          "민감 회의도 같은 루트로, 보안은 나중에" (2026-08-16).
+          「민감」은 표시로만 남아, 나중에 정책을 다시 세울 때 골라내는 손잡이가 된다.
+        */
+        transcript: v.transcript || null,
         sensitive: v.sensitive,
       })
       if (error) throw error
@@ -83,9 +88,8 @@ export default function MeetingList() {
       }
     >
       <p className="text-caption text-ink-mute mb-3">
-        녹음 자동 전사는 아직 없습니다. 전사문이 있으면 붙여넣어 주세요.
-        <strong className="font-semibold"> 회생·인사 같은 민감한 회의는 「민감」을 켜 주세요</strong> —
-        전사문이 저장되지 않습니다.
+        지나간 회의를 적거나, 다른 도구로 전사한 글을 옮겨 담는 자리입니다.
+        회의 중에 듣게 하시려면 위의 <strong className="font-semibold">「🎙 실시간」</strong>을 쓰세요.
       </p>
 
       {adding && <NewForm onCancel={() => setAdding(false)} onSubmit={(v) => create.mutate(v)} />}
@@ -195,7 +199,7 @@ function NewForm({
         onSubmit(v)
       }}
     >
-      <div className="grid grid-cols-[140px_1fr] gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-3">
         <Field label="일자">
           <TextInput type="date" value={v.met_on} onChange={set('met_on')} />
         </Field>
@@ -203,7 +207,7 @@ function NewForm({
           <TextInput value={v.title} onChange={set('title')} />
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="장소">
           <TextInput value={v.place} onChange={set('place')} />
         </Field>
@@ -225,14 +229,12 @@ function NewForm({
           onChange={(e) => setV((p) => ({ ...p, sensitive: e.target.checked }))}
           className="accent-action"
         />
-        민감 회의 — 전사문을 저장하지 않습니다
+        민감 회의 (회생 · 인사) — 표시만 해 둡니다
       </label>
 
-      {!v.sensitive && (
-        <Field label="전사문" hint="있으면 붙여넣기. 없어도 됩니다">
-          <TextArea rows={4} value={v.transcript} onChange={set('transcript')} />
-        </Field>
-      )}
+      <Field label="전사문" hint="있으면 붙여넣기. 없어도 됩니다">
+        <TextArea rows={4} value={v.transcript} onChange={set('transcript')} />
+      </Field>
 
       <div className="flex gap-2">
         <PillButton type="submit">저장</PillButton>

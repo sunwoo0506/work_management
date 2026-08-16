@@ -19,7 +19,7 @@ export function PageHeader({
   right?: React.ReactNode
 }) {
   return (
-    <header className="flex items-start justify-between gap-6 pb-6 border-b border-hairline">
+    <header className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-6 pb-5 sm:pb-6 border-b border-hairline">
       <div className="min-w-0">
         <h1 className="text-title leading-[1.15] font-semibold tracking-[-0.5px]">{title}</h1>
         {description && (

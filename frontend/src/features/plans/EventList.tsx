@@ -149,7 +149,7 @@ function NewForm({
       <Field label="제목">
         <TextInput value={v.title} onChange={set('title')} />
       </Field>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="종류">
           <Select value={v.kind} onChange={set('kind')}>
             {KINDS.map((k) => (

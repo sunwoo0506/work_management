@@ -127,8 +127,9 @@ export default function ProgressBlock({
   )
 }
 
-const LABEL_W = 'w-[150px] shrink-0'
-const RIGHT_W = 'w-[78px] shrink-0'
+// 좁은 화면에서는 이름·오른쪽 칸을 줄여 막대가 그려질 자리를 남긴다
+const LABEL_W = 'w-[104px] sm:w-[150px] shrink-0'
+const RIGHT_W = 'w-[58px] sm:w-[78px] shrink-0'
 
 function Timeline({
   bars,
@@ -239,8 +240,11 @@ function Legend({ className, children }: { className: string; children: React.Re
 }
 
 function ListView({ bars }: { bars: Bar[] }) {
+  // 표는 좁은 화면에서 줄이지 않고 **옆으로 밀어** 보게 한다.
+  // 칸을 눌러 담으면 제목이 한 글자씩 끊겨 읽을 수 없다
   return (
-    <table className="w-full text-caption">
+    <div className="overflow-x-auto">
+    <table className="w-full min-w-[520px] text-caption">
       <thead>
         <tr className="text-ink-mute text-left border-b border-hairline">
           <th className="font-normal pb-2">지시사항</th>
@@ -280,5 +284,6 @@ function ListView({ bars }: { bars: Bar[] }) {
         ))}
       </tbody>
     </table>
+    </div>
   )
 }

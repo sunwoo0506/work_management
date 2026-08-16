@@ -93,7 +93,7 @@ function PromoteDialog({ item, onClose }: { item: InboxItem; onClose: () => void
           </p>
         )}
 
-        <div className="grid grid-cols-3 gap-3 mt-5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5">
           <label className="block">
             <span className="block text-caption text-ink-soft mb-1.5">중요도</span>
             <Select value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>

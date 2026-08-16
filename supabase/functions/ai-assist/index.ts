@@ -2,7 +2,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { getProvider } from '../_shared/provider/index.ts'
 import type { ChatMessage } from '../_shared/provider/index.ts'
-import { ASK_RULES, ASK_RULES_WEB, CHECKLIST_RULES, FOCUS_REMINDER } from './prompt.ts'
+import { ASK_RULES, ASK_RULES_WEB, CHECKLIST_RULES, FOCUS_REMINDER, MINUTES_RULES } from './prompt.ts'
 
 /**
  * AI 업무 비서 — 브라우저와 AI 공급자 사이에 서는 유일한 자리.
@@ -47,9 +47,22 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => null)
     const mode: string = body?.mode
     const taskId: string = body?.taskId
-    if (mode !== '질문' && mode !== '체크리스트') {
-      return json({ error: '모드는 「질문」 또는 「체크리스트」여야 합니다.' }, 400)
+    if (mode !== '질문' && mode !== '체크리스트' && mode !== '회의록') {
+      return json({ error: '모드는 「질문」·「체크리스트」·「회의록」 중 하나여야 합니다.' }, 400)
     }
+
+    /**
+     * 회의록만 자료를 **브라우저에서 받는다.**
+     *
+     * 다른 모드는 DB 를 여기서 다시 읽는다 — 브라우저가 보낸 걸 믿으면
+     * 남의 업무 내용을 밀어 넣을 수 있기 때문이다. 회의록은 사정이 다르다.
+     * 방금 받아쓴 글은 **아직 어디에도 저장돼 있지 않다.** 저장부터 하게 하면
+     * 민감 회의(전사문을 저장하지 않는다 — 설계서 §5.8)에서 앞뒤가 맞지 않는다.
+     *
+     * 밀어 넣어도 새는 것이 없다 — 자기가 방금 말한 것을 자기가 요약받을 뿐이다.
+     */
+    if (mode === '회의록') return await minutes(body)
+
     if (!taskId) return json({ error: '어느 업무인지가 없습니다.' }, 400)
 
     const ctx = await buildContext(db, taskId, body?.attachmentIds ?? null)
@@ -111,6 +124,74 @@ Deno.serve(async (req) => {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500)
   }
 })
+
+/** 전사문 길이 상한. 1시간 회의가 대략 2만 자다. 2시간까지 받는다 */
+const TRANSCRIPT_MAX = 40_000
+
+/**
+ * 회의록 초안 — 받아쓴 글을 네 칸으로 정리한다.
+ *
+ * 나눈 결과(요약·결정·할 일·확인 필요)를 여기서 파싱하지 않고 **글 그대로 돌려준다.**
+ * 나누는 일은 `domain/transcript.ts` 가 한다 — 그래야 브라우저·AI 없이 시험할 수 있고,
+ * 형식이 어긋나 못 나눴을 때 화면이 원문을 그대로 보여 줄 수 있다.
+ */
+async function minutes(body: any) {
+  const transcript = String(body?.transcript ?? '').trim()
+  if (!transcript) return json({ error: '받아쓴 글이 없습니다.' }, 400)
+
+  const glossary: { term: string; means: string }[] = Array.isArray(body?.glossary)
+    ? body.glossary
+        .filter((g: any) => g && typeof g.term === 'string' && typeof g.means === 'string')
+        .slice(0, 60)
+    : []
+
+  const head = [
+    body?.title ? `회의 제목: ${String(body.title).slice(0, 200)}` : null,
+    body?.attendees ? `참석: ${String(body.attendees).slice(0, 300)}` : null,
+    body?.agenda ? `미리 정한 안건: ${String(body.agenda).slice(0, 500)}` : null,
+    body?.myNotes ? `회의 중 사용자가 직접 적은 메모:\n${String(body.myNotes).slice(0, 2000)}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  /**
+   * 사내 용어집 — 이번 회의에 나온 것만 화면이 골라 보낸다 (설계서 §5.8).
+   * 「타이백」으로 받아써져도 회의록에는 「타이벡」으로 적히게 하는 자리다.
+   */
+  const terms = glossary.length
+    ? `\n\n## 사내 용어집 (이 회의에 나온 것)\n` +
+      glossary.map((g) => `- ${g.term}: ${g.means}`).join('\n') +
+      `\n소리가 비슷하게 받아써진 대목은 이 표기로 고쳐 적고, 확신이 없으면 「확인 필요」에 적으세요.`
+    : ''
+
+  const provider = getProvider()
+  const result = await provider.chat(
+    [
+      { role: 'system', content: MINUTES_RULES },
+      {
+        role: 'user',
+        content:
+          `${head}${terms}\n\n## 받아쓴 글\n` +
+          transcript.slice(0, TRANSCRIPT_MAX) +
+          '\n\n위 글로 회의록 초안을 만들어 주세요.',
+      },
+    ],
+    {},
+  )
+
+  return json({
+    mode: '회의록',
+    text: result.text,
+    sources: [
+      { kind: '전사문', label: `이번 회의 받아쓴 글 ${transcript.length.toLocaleString()}자` },
+      ...(glossary.length ? [{ kind: '용어집', label: `사내 용어 ${glossary.length}개` }] : []),
+    ],
+    model: result.model,
+    tokensIn: result.tokensIn,
+    tokensOut: result.tokensOut,
+    truncated: transcript.length > TRANSCRIPT_MAX,
+  })
+}
 
 /**
  * AI 에게 넘길 자료를 모은다.

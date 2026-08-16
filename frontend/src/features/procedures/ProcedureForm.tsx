@@ -60,7 +60,7 @@ export default function ProcedureForm({
       }}
       className="space-y-4"
     >
-      <div className="grid grid-cols-[110px_1fr] gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr] gap-4">
         <Field label="코드" hint="예: P-01">
           <TextInput value={v.code ?? ''} onChange={(e) => set('code', e.target.value)} />
         </Field>
@@ -79,7 +79,7 @@ export default function ProcedureForm({
         <TextArea rows={2} value={v.purpose ?? ''} onChange={(e) => set('purpose', e.target.value)} />
       </Field>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="영역">
           <Select value={v.area ?? ''} onChange={(e) => set('area', e.target.value)}>
             <option value="">—</option>
@@ -98,7 +98,7 @@ export default function ProcedureForm({
       <fieldset className="bg-parchment rounded-lg p-4 border border-hairline space-y-4">
         <legend className="text-caption text-ink-mute px-1">언제 시작하나</legend>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="트리거">
             <Select
               value={v.trigger_type}
