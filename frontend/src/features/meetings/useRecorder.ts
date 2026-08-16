@@ -26,7 +26,18 @@ const CHUNK_MS = 45_000
 
 export type RecorderStatus = '준비' | '녹음중' | '멈춤'
 
-export function useRecorder(onChunk: (blob: Blob, atMs: number) => void) {
+/**
+ * @param chunkMs 토막 길이. **0 이면 끊지 않고 끝까지 한 파일로 담는다.**
+ *
+ *   0 을 쓰는 자리 — 브라우저 받아쓰기(⚡)를 쓸 때의 **안전망 녹음**이다.
+ *   받아쓰기가 글자를 못 내놓으면 그동안 한 말이 통째로 사라진다. 소리라도
+ *   남겨 두면 나중에 내려받아 다른 방법으로 글로 바꿀 수 있다.
+ *   이때는 서버로 보내지 않으므로 요금도 0원이고 밖으로도 안 나간다.
+ */
+export function useRecorder(
+  onChunk: (blob: Blob, atMs: number) => void,
+  chunkMs: number = CHUNK_MS,
+) {
   /*
     넘겨받은 함수를 그릇(ref)에 담아 둔다.
     녹음이 도는 동안 화면이 다시 그려지면 이 함수는 새것으로 바뀌는데,
@@ -125,14 +136,17 @@ export function useRecorder(onChunk: (blob: Blob, atMs: number) => void) {
 
     recRef.current = rec
     rec.start()
-    timerRef.current = window.setTimeout(() => {
-      try {
-        if (rec.state !== 'inactive') rec.stop()
-      } catch {
-        // 이미 멈춰 있으면 무시
-      }
-    }, CHUNK_MS)
-  }, [pickMime])
+    // 0 이면 시계를 걸지 않는다 — 사람이 「끝내기」를 누를 때까지 한 파일로 담는다
+    if (chunkMs > 0) {
+      timerRef.current = window.setTimeout(() => {
+        try {
+          if (rec.state !== 'inactive') rec.stop()
+        } catch {
+          // 이미 멈춰 있으면 무시
+        }
+      }, chunkMs)
+    }
+  }, [pickMime, chunkMs])
 
   const start = useCallback(
     async (elapsed: () => number) => {

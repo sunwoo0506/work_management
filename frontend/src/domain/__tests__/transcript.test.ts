@@ -8,6 +8,8 @@ import {
   transcriptStats,
   transcriptText,
   usedGlossary,
+  mergeIntoTranscript,
+  tidyTranscript,
 } from '../transcript'
 import type { Segment } from '../transcript'
 
@@ -176,5 +178,71 @@ describe('parseMinutes — AI 초안을 칸으로 나누기', () => {
 
   it('빈 답에도 죽지 않는다', () => {
     expect(parseMinutes('').summary).toEqual([])
+  })
+})
+
+describe('mergeIntoTranscript — 뒤늦게 받아쓴 글을 제자리에', () => {
+  const 기존 = '[00:10] 첫 줄\n[02:00] 둘째 줄\n[05:00] 셋째 줄'
+
+  it('시각에 맞는 자리에 끼운다', () => {
+    expect(mergeIntoTranscript(기존, 초(150), '끼운 줄')).toBe(
+      '[00:10] 첫 줄\n[02:00] 둘째 줄\n[02:30] 끼운 줄\n[05:00] 셋째 줄',
+    )
+  })
+
+  it('맨 앞에도 끼운다', () => {
+    expect(mergeIntoTranscript(기존, 초(5), '맨 앞')).toMatch(/^\[00:05\] 맨 앞\n/)
+  })
+
+  it('제일 늦은 것은 맨 뒤로', () => {
+    expect(mergeIntoTranscript(기존, 분(10), '맨 뒤')).toMatch(/\[10:00\] 맨 뒤$/)
+  })
+
+  it('빈 글에 넣으면 그 줄 하나가 된다', () => {
+    expect(mergeIntoTranscript('', 초(30), '첫 말')).toBe('[00:30] 첫 말')
+  })
+
+  it('시각이 없는 줄은 순서를 건드리지 않는다', () => {
+    const 손글 = '사람이 손으로 적은 줄'
+    expect(mergeIntoTranscript(손글, 초(30), '받아쓴 줄')).toBe('사람이 손으로 적은 줄\n[00:30] 받아쓴 줄')
+  })
+
+  it('한 시간 넘는 시각도 읽는다', () => {
+    const 긴회의 = '[1:05:00] 늦게 한 말'
+    expect(mergeIntoTranscript(긴회의, 분(30), '중간 말')).toBe('[30:00] 중간 말\n[1:05:00] 늦게 한 말')
+  })
+})
+
+describe('tidyTranscript — 다른 데서 받아쓴 글 다듬기', () => {
+  it('줄 앞 시각을 대괄호로 통일한다', () => {
+    expect(tidyTranscript('00:12 첫 줄\n1:05 둘째 줄')).toBe('[00:12] 첫 줄\n[1:05] 둘째 줄')
+  })
+
+  it('괄호로 감싼 시각도 읽는다', () => {
+    expect(tidyTranscript('(02:30) 셋째 줄')).toBe('[02:30] 셋째 줄')
+  })
+
+  it('이미 대괄호면 그대로 둔다', () => {
+    expect(tidyTranscript('[03:00] 넷째 줄')).toBe('[03:00] 넷째 줄')
+  })
+
+  it('시각이 없는 줄은 건드리지 않는다', () => {
+    expect(tidyTranscript('그냥 받아쓴 문장입니다')).toBe('그냥 받아쓴 문장입니다')
+  })
+
+  it('화자 이름은 지우지 않는다 — 우리 받아쓰기가 못 하는 정보다', () => {
+    expect(tidyTranscript('화자 1: 안녕하세요')).toBe('화자 1: 안녕하세요')
+  })
+
+  it('빈 줄이 이어지면 하나만 남긴다', () => {
+    expect(tidyTranscript('첫 줄\n\n\n\n둘째 줄')).toBe('첫 줄\n\n둘째 줄')
+  })
+
+  it('윈도 줄바꿈과 앞뒤 공백을 정리한다', () => {
+    expect(tidyTranscript('  첫 줄  \r\n  둘째 줄  \r\n')).toBe('첫 줄\n둘째 줄')
+  })
+
+  it('빈 글은 빈 글', () => {
+    expect(tidyTranscript('   \n\n  ')).toBe('')
   })
 })

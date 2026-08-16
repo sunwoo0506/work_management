@@ -1045,6 +1045,60 @@ export type Database = {
           },
         ]
       }
+      meeting_audio: {
+        Row: {
+          at_ms: number
+          bytes: number
+          company_id: string
+          created_at: string
+          id: string
+          meeting_id: string
+          mime: string | null
+          path: string
+          reason: string
+          user_id: string
+        }
+        Insert: {
+          at_ms?: number
+          bytes?: number
+          company_id: string
+          created_at?: string
+          id?: string
+          meeting_id: string
+          mime?: string | null
+          path: string
+          reason: string
+          user_id: string
+        }
+        Update: {
+          at_ms?: number
+          bytes?: number
+          company_id?: string
+          created_at?: string
+          id?: string
+          meeting_id?: string
+          mime?: string | null
+          path?: string
+          reason?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_audio_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_audio_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meetings: {
         Row: {
           agenda: string | null
@@ -1057,6 +1111,7 @@ export type Database = {
           follow_ups: Json
           id: string
           met_on: string
+          minutes: Json | null
           my_notes: string | null
           place: string | null
           sensitive: boolean
@@ -1065,6 +1120,7 @@ export type Database = {
           transcript_source: string
           updated_at: string
           user_id: string
+          writer: string | null
         }
         Insert: {
           agenda?: string | null
@@ -1077,6 +1133,7 @@ export type Database = {
           follow_ups?: Json
           id?: string
           met_on: string
+          minutes?: Json | null
           my_notes?: string | null
           place?: string | null
           sensitive?: boolean
@@ -1085,6 +1142,7 @@ export type Database = {
           transcript_source?: string
           updated_at?: string
           user_id: string
+          writer?: string | null
         }
         Update: {
           agenda?: string | null
@@ -1097,6 +1155,7 @@ export type Database = {
           follow_ups?: Json
           id?: string
           met_on?: string
+          minutes?: Json | null
           my_notes?: string | null
           place?: string | null
           sensitive?: boolean
@@ -1105,6 +1164,7 @@ export type Database = {
           transcript_source?: string
           updated_at?: string
           user_id?: string
+          writer?: string | null
         }
         Relationships: [
           {

@@ -1,11 +1,10 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import type { Row } from '../../lib/supabase'
 import { Card, EmptyState } from '../../components/ui'
-import { Field, PillButton, TextArea, TextInput } from '../../components/Field'
-import { ymd } from '../../domain/daily'
 import { useCompanyId } from '../companies/useCompany'
+import MeetingDetail from './MeetingDetail'
 
 type Meeting = Row<'meetings'>
 
@@ -20,8 +19,6 @@ type Meeting = Row<'meetings'>
  */
 export default function MeetingList() {
   const companyId = useCompanyId()
-  const qc = useQueryClient()
-  const [adding, setAdding] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
 
   const { data: list } = useQuery({
@@ -39,63 +36,18 @@ export default function MeetingList() {
     enabled: !!companyId,
   })
 
-  const create = useMutation({
-    mutationFn: async (v: MeetingDraft) => {
-      const { data: auth } = await supabase.auth.getUser()
-      const userId = auth.user?.id
-      if (!userId) throw new Error('로그인 정보를 읽지 못했습니다.')
-
-      const { error } = await supabase.from('meetings').insert({
-        company_id: companyId as string,
-        user_id: userId,
-        met_on: v.met_on,
-        title: v.title,
-        place: v.place || null,
-        attendees: v.attendees || null,
-        agenda: v.agenda || null,
-        decisions: v.decisions || null,
-        /*
-          예전에는 민감 회의면 전사문을 버렸다 (설계서 §5.8).
-          지금은 **일반 회의와 같은 길로 저장한다** — 사용자 판단으로
-          "민감 회의도 같은 루트로, 보안은 나중에" (2026-08-16).
-          「민감」은 표시로만 남아, 나중에 정책을 다시 세울 때 골라내는 손잡이가 된다.
-        */
-        transcript: v.transcript || null,
-        sensitive: v.sensitive,
-      })
-      if (error) throw error
-    },
-    onSuccess: () => {
-      setAdding(false)
-      void qc.invalidateQueries({ queryKey: ['meetings'] })
-    },
-  })
-
   return (
-    <Card
-      title="회의록"
-      count={list?.length ?? 0}
-      action={
-        !adding && (
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="text-caption text-action font-semibold"
-          >
-            ＋ 회의록
-          </button>
-        )
-      }
-    >
+    <Card title="회의록" count={list?.length ?? 0}>
       <p className="text-caption text-ink-mute mb-3">
-        지나간 회의를 적거나, 다른 도구로 전사한 글을 옮겨 담는 자리입니다.
-        회의 중에 듣게 하시려면 위의 <strong className="font-semibold">「🎙 실시간」</strong>을 쓰세요.
+        지난 회의가 모두 여기 모입니다.{' '}
+        <strong className="font-semibold">항목을 선택하면 수정 · 초안 작성 · 내려받기 · 삭제가 가능합니다.</strong>
       </p>
 
-      {adding && <NewForm onCancel={() => setAdding(false)} onSubmit={(v) => create.mutate(v)} />}
-
       {!list || list.length === 0 ? (
-        !adding && <EmptyState message="아직 없습니다." />
+        <EmptyState
+          message="아직 없습니다."
+          hint="회의록은 「🎙 회의록 만들기」에서 등록합니다."
+        />
       ) : (
         <ul className="divide-y divide-divider">
           {list.map((m) => {
@@ -108,140 +60,28 @@ export default function MeetingList() {
                   className="w-full text-left flex items-baseline gap-3"
                 >
                   <span className="text-caption text-ink-mute w-24 shrink-0">{m.met_on}</span>
-                  <span className="text-body flex-1">{m.title}</span>
+                  <span className="text-body flex-1 min-w-0">{m.title}</span>
+                  {/* 펼치지 않아도 「정리했나 안 했나」가 보여야 한다 */}
+                  {m.transcript && (
+                    <span className="text-caption text-ink-mute shrink-0" title="받아쓴 글 있음">
+                      {m.transcript_source === '녹음전사' ? '🎧' : '⚡'}
+                    </span>
+                  )}
+                  {!m.agenda && !m.decisions && (
+                    <span className="text-caption text-action shrink-0">정리 전</span>
+                  )}
                   {m.sensitive && (
                     <span className="text-caption text-alert shrink-0">민감</span>
                   )}
                 </button>
 
-                {open && (
-                  <dl className="mt-3 grid grid-cols-[80px_1fr] gap-y-2 text-body">
-                    {m.place && (
-                      <>
-                        <dt className="text-caption text-ink-mute pt-0.5">장소</dt>
-                        <dd>{m.place}</dd>
-                      </>
-                    )}
-                    {m.attendees && (
-                      <>
-                        <dt className="text-caption text-ink-mute pt-0.5">참석</dt>
-                        <dd>{m.attendees}</dd>
-                      </>
-                    )}
-                    {m.agenda && (
-                      <>
-                        <dt className="text-caption text-ink-mute pt-0.5">안건</dt>
-                        <dd className="whitespace-pre-wrap leading-relaxed">{m.agenda}</dd>
-                      </>
-                    )}
-                    {m.decisions && (
-                      <>
-                        <dt className="text-caption text-ink-mute pt-0.5">결정</dt>
-                        <dd className="whitespace-pre-wrap leading-relaxed">{m.decisions}</dd>
-                      </>
-                    )}
-                    {m.transcript && (
-                      <>
-                        <dt className="text-caption text-ink-mute pt-0.5">전사문</dt>
-                        <dd className="text-caption text-ink-soft whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
-                          {m.transcript}
-                        </dd>
-                      </>
-                    )}
-                  </dl>
-                )}
+                {/* 펼칠 때만 그린다 — 회의가 쌓이면 목록 전체가 무거워진다 */}
+                {open && <MeetingDetail key={m.id} meeting={m} />}
               </li>
             )
           })}
         </ul>
       )}
     </Card>
-  )
-}
-
-type MeetingDraft = {
-  met_on: string
-  title: string
-  place: string
-  attendees: string
-  agenda: string
-  decisions: string
-  transcript: string
-  sensitive: boolean
-}
-
-function NewForm({
-  onCancel,
-  onSubmit,
-}: {
-  onCancel: () => void
-  onSubmit: (v: MeetingDraft) => void
-}) {
-  const [v, setV] = useState<MeetingDraft>({
-    met_on: ymd(new Date()),
-    title: '',
-    place: '',
-    attendees: '',
-    agenda: '',
-    decisions: '',
-    transcript: '',
-    sensitive: false,
-  })
-  const set = (k: keyof MeetingDraft) => (e: { target: { value: string } }) =>
-    setV((p) => ({ ...p, [k]: e.target.value }))
-
-  return (
-    <form
-      className="border border-hairline rounded-md p-4 mb-4 space-y-3"
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (!v.title.trim()) return
-        onSubmit(v)
-      }}
-    >
-      <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-3">
-        <Field label="일자">
-          <TextInput type="date" value={v.met_on} onChange={set('met_on')} />
-        </Field>
-        <Field label="제목">
-          <TextInput value={v.title} onChange={set('title')} />
-        </Field>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="장소">
-          <TextInput value={v.place} onChange={set('place')} />
-        </Field>
-        <Field label="참석" hint="역할로 적습니다">
-          <TextInput value={v.attendees} onChange={set('attendees')} placeholder="예: 대표, 구매사업본부 담당자" />
-        </Field>
-      </div>
-      <Field label="안건">
-        <TextArea rows={2} value={v.agenda} onChange={set('agenda')} />
-      </Field>
-      <Field label="결정사항">
-        <TextArea rows={2} value={v.decisions} onChange={set('decisions')} />
-      </Field>
-
-      <label className="flex items-center gap-2 text-body">
-        <input
-          type="checkbox"
-          checked={v.sensitive}
-          onChange={(e) => setV((p) => ({ ...p, sensitive: e.target.checked }))}
-          className="accent-action"
-        />
-        민감 회의 (회생 · 인사) — 표시만 해 둡니다
-      </label>
-
-      <Field label="전사문" hint="있으면 붙여넣기. 없어도 됩니다">
-        <TextArea rows={4} value={v.transcript} onChange={set('transcript')} />
-      </Field>
-
-      <div className="flex gap-2">
-        <PillButton type="submit">저장</PillButton>
-        <PillButton type="button" variant="ghost" onClick={onCancel}>
-          취소
-        </PillButton>
-      </div>
-    </form>
   )
 }

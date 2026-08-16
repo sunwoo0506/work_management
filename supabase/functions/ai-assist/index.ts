@@ -2,7 +2,14 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { getProvider } from '../_shared/provider/index.ts'
 import type { ChatMessage } from '../_shared/provider/index.ts'
-import { ASK_RULES, ASK_RULES_WEB, CHECKLIST_RULES, FOCUS_REMINDER, MINUTES_RULES } from './prompt.ts'
+import {
+  ASK_RULES,
+  ASK_RULES_WEB,
+  CHECKLIST_RULES,
+  FOCUS_REMINDER,
+  MINUTES_PART_NOTE,
+  MINUTES_RULES,
+} from './prompt.ts'
 
 /**
  * AI 업무 비서 — 브라우저와 AI 공급자 사이에 서는 유일한 자리.
@@ -163,6 +170,14 @@ async function minutes(body: any) {
       glossary.map((g) => `- ${g.term}: ${g.means}`).join('\n') +
       `\n소리가 비슷하게 받아써진 대목은 이 표기로 고쳐 적고, 확신이 없으면 「확인 필요」에 적으세요.`
     : ''
+
+  /**
+   * 긴 회의는 화면이 구간으로 잘라 보낸다. 몇 번째 구간인지 알려 줘야
+   * AI 가 그 구간만 보고 「목적」이나 「다음 회의」를 단정하지 않는다.
+   */
+  const part = Number(body?.part ?? 0)
+  const parts = Number(body?.parts ?? 0)
+  const partNote = parts > 1 && part > 0 ? MINUTES_PART_NOTE(part, parts) : ''
 
   const provider = getProvider()
   const result = await provider.chat(

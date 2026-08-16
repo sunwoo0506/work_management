@@ -140,7 +140,10 @@ const HEADINGS: { key: keyof Minutes; words: string[] }[] = [
 /** 머리표·괄호·별표를 걷어낸 알맹이 */
 function strip(line: string): string {
   return line
-    .replace(/^[\s#>*\-·•\d.)\][【】]+/, '')
+    // ⚠️ 숫자를 무턱대고 지우면 안 된다. 「8/25」의 8 이 머리표로 오인돼 잘렸다.
+    // 머리표(#, -, ·)와 **번호 매기기(1. 2))** 만 지운다
+    .replace(/^\s*[#>*\-·•\][【】]*\s*/, '')
+    .replace(/^\d+[.)]\s+/, '')
     .replace(/[*_`]/g, '')
     .replace(/[[\]【】:：]+\s*$/, '')
     .trim()
@@ -175,4 +178,66 @@ export function parseMinutes(text: string): Minutes {
     out[current].push(item.slice(0, 300))
   }
   return out
+}
+
+/**
+ * 나중에 받아쓴 글을 **시각에 맞는 자리에** 끼워 넣는다.
+ *
+ * ── 왜 필요한가 ──────────────────────────────────────────
+ * 받아쓰기에 실패한 토막을 나중에 다시 보내면 글이 뒤늦게 도착한다.
+ * 그걸 맨 뒤에 붙이면 **회의 순서가 뒤죽박죽이 된다** — 12분에 한 말이
+ * 55분 뒤에 적혀 있으면 회의록으로 못 쓴다.
+ *
+ * 줄 앞의 `[분:초]` 를 읽어 제자리를 찾아 끼운다.
+ * 시각이 없는 줄(사람이 손으로 적은 것)은 순서를 건드리지 않고 그대로 둔다.
+ */
+export function mergeIntoTranscript(existing: string, at: number, text: string): string {
+  const line = `[${clock(at)}] ${text.trim()}`
+  if (!existing.trim()) return line
+
+  const lines = existing.split('\n')
+  const stamp = (l: string): number | null => {
+    const m = l.match(/^\[(?:(\d+):)?(\d{1,2}):(\d{2})\]/)
+    if (!m) return null
+    const h = m[1] ? Number(m[1]) : 0
+    return (h * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const t = stamp(lines[i])
+    if (t !== null && t > at) {
+      return [...lines.slice(0, i), line, ...lines.slice(i)].join('\n')
+    }
+  }
+  return `${existing}\n${line}`
+}
+
+/**
+ * 다른 데서 받아쓴 글을 우리 형식에 맞게 다듬는다.
+ *
+ * ── 왜 손보나 ────────────────────────────────────────────
+ * 폰 녹음기 앱이 만든 글은 우리가 만든 것과 모양이 다르다 —
+ * 시각이 `00:12` 처럼 대괄호 없이 붙거나, 빈 줄이 잔뜩 끼거나,
+ * 줄 끝에 공백이 남는다. 그대로 두면 **나중에 조각을 제자리에 끼워 넣을 때**
+ * (mergeIntoTranscript) 시각을 못 읽어 순서가 엉킨다.
+ *
+ * 반대로 **내용은 손대지 않는다.** 화자 이름(「화자 1:」)도 지우지 않는다 —
+ * 누가 말했는지는 우리 받아쓰기가 못 하는 귀한 정보다.
+ */
+export function tidyTranscript(raw: string): string {
+  return raw
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => {
+      const t = line.trim()
+      // 줄 앞의 시각을 대괄호 형태로 통일한다: 00:12 / 0:12 / (00:12) → [00:12]
+      return t.replace(/^[([]?(\d{1,2}:\d{2}(?::\d{2})?)[)\]]?\s*/, '[$1] ')
+    })
+    .filter((line, i, all) => {
+      if (line !== '') return true
+      // 빈 줄이 이어지면 하나만 남긴다
+      return i > 0 && all[i - 1] !== ''
+    })
+    .join('\n')
+    .trim()
 }

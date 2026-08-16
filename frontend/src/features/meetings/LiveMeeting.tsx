@@ -15,8 +15,15 @@ import {
 import type { Minutes, Segment } from '../../domain/transcript'
 import { useCompanyId } from '../companies/useCompany'
 import { useLiveTranscript } from './useLiveTranscript'
+import SpeechCheck from './SpeechCheck'
 import { useRecorder } from './useRecorder'
-import { callMinutes, loadGlossary, saveLiveMeeting, transcribeChunk } from './api'
+import {
+  callMinutes,
+  loadGlossary,
+  saveLiveMeeting,
+  transcribeChunk,
+  uploadMeetingAudio,
+} from './api'
 import { appendFinal } from '../../domain/transcript'
 
 /**
@@ -49,6 +56,31 @@ const DRAFT_KEY = 'work-management:live-meeting'
 const WAYS = ['⚡ 브라우저', '🎧 녹음'] as const
 type Way = (typeof WAYS)[number]
 
+/**
+ * 어느 브라우저인가.
+ *
+ * ── 왜 이걸 보나 ─────────────────────────────────────────
+ * 받아쓰기 기능이 **있는 척만 하는 브라우저**가 있다. 크롬을 바탕으로 만든
+ * 브라우저(웨일·삼성 인터넷 등)는 `webkitSpeechRecognition` 이라는 이름은
+ * 그대로 물려받았지만 **뒤에서 실제로 받아써 주는 서비스가 없다.**
+ *
+ * 그래서 화면에서는 「지원함」으로 보이고, 마이크도 열리고, 소리 감지 신호까지
+ * 오는데 **글자만 영영 안 나온다.** 실제로 그 일이 났다 (2026-08-16).
+ * 이름을 보여 줘야 사용자가 「내 잘못인가」를 그만 의심한다.
+ */
+function browserName(): { name: string; speechOk: boolean } {
+  if (typeof navigator === 'undefined') return { name: '알 수 없음', speechOk: false }
+  const ua = navigator.userAgent
+  if (/Whale/i.test(ua)) return { name: '네이버 웨일', speechOk: false }
+  if (/SamsungBrowser/i.test(ua)) return { name: '삼성 인터넷', speechOk: false }
+  if (/OPR|Opera/i.test(ua)) return { name: '오페라', speechOk: false }
+  if (/Firefox/i.test(ua)) return { name: '파이어폭스', speechOk: false }
+  if (/Edg\//i.test(ua)) return { name: '엣지', speechOk: true }
+  if (/Chrome/i.test(ua)) return { name: '크롬', speechOk: true }
+  if (/Safari/i.test(ua)) return { name: '사파리', speechOk: true }
+  return { name: '알 수 없는 브라우저', speechOk: false }
+}
+
 /** 손가락으로 쓰는 기기인가. 폰·태블릿이면 처음부터 녹음 쪽을 고른다 */
 function isTouchDevice(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true
@@ -77,6 +109,7 @@ export default function LiveMeeting() {
   const [recovered, setRecovered] = useState<Saved | null>(null)
   const [done, setDone] = useState<string | null>(null)
 
+  const browser = useMemo(browserName, [])
   const speechOk = live.supported && live.secure
   /**
    * 어느 길로 받아쓸까.
@@ -91,6 +124,26 @@ export default function LiveMeeting() {
   /** 서버가 지금 받아쓰고 있는 토막 수. 0보다 크면 화면에 「받아쓰는 중」이 뜬다 */
   const [pending, setPending] = useState(0)
   const [recNote, setRecNote] = useState<string | null>(null)
+  /**
+   * ── 안전망 ───────────────────────────────────────────────
+   * 받아쓰기가 글자를 못 내놓으면 **그동안 한 말이 통째로 사라진다.**
+   * 소리는 저장되지 않고 흘러가기 때문이다. 그래서 회의 중에 **소리도 함께 담아 둔다.**
+   *
+   * 이 소리는 **이 브라우저 안에만** 있다. 서버로 보내지 않으므로 요금도 0원이고
+   * 밖으로도 안 나간다. 회의가 끝나면 내려받을 수 있고, 안 내려받으면 그냥 버려진다.
+   */
+  const [keepAudio, setKeepAudio] = useState(true)
+  const [audio, setAudio] = useState<Blob | null>(null)
+  /**
+   * 저장할 때 소리도 서버에 함께 올릴까.
+   *
+   * null 이면 툴이 알아서 정한다 — **글자가 하나도 안 나온 회의는 올리고,
+   * 잘 받아쓴 회의는 안 올린다.** 잘 받아썼으면 소리는 더 볼 일이 없고,
+   * 안 받아썼으면 소리가 그 회의의 유일한 기록이기 때문이다.
+   */
+  const [uploadAudio, setUploadAudio] = useState<boolean | null>(null)
+  /** 서버가 변환하지 못한 구간들. 크레딧이 없어 실패한 경우 나중에 다시 보낼 수 있다 */
+  const [failed, setFailed] = useState<{ blob: Blob; at: number }[]>([])
 
   const { data: glossary } = useQuery({
     queryKey: ['glossary', companyId],
@@ -99,6 +152,8 @@ export default function LiveMeeting() {
   })
 
   const listRef = useRef<HTMLDivElement>(null)
+  /** 회의명을 안 적었을 때 그 칸으로 데려가기 위한 손잡이 */
+  const titleRef = useRef<HTMLInputElement>(null)
   const stats = transcriptStats(live.segments)
   const text = useMemo(() => transcriptText(live.segments), [live.segments])
 
@@ -123,7 +178,10 @@ export default function LiveMeeting() {
         const got = await transcribeChunk(blob, termHint)
         if (got) setSegments((prev) => appendFinal(prev, got, atMs))
       } catch (e) {
-        // 토막 하나가 실패해도 회의는 계속돼야 한다. 알리기만 하고 넘어간다
+        // 토막 하나가 실패해도 회의는 계속돼야 한다. 알리기만 하고 넘어간다.
+        // ⚠️ 소리는 **버리지 않고 들고 있는다** — 크레딧이 없어 실패한 것이라면
+        //    채운 뒤 다시 보내면 그 45초가 되살아난다
+        setFailed((prev) => [...prev, { blob, at: atMs }])
         setRecNote(e instanceof Error ? e.message : String(e))
       } finally {
         setPending((n) => n - 1)
@@ -132,6 +190,14 @@ export default function LiveMeeting() {
     [termHint, setSegments],
   )
   const recorder = useRecorder(handleChunk)
+  /**
+   * 안전망 녹음기 — 끊지 않고 한 파일로 담는다 (토막 길이 0).
+   * ⚡ 브라우저 받아쓰기를 쓸 때 같이 돈다. 서버로 보내지 않는다.
+   */
+  const safety = useRecorder(
+    useCallback((blob: Blob) => setAudio(blob), []),
+    0,
+  )
   const recordOk = recorder.supported && live.secure
 
   // ── 브라우저에 임시 저장 ────────────────────────────────
@@ -190,6 +256,7 @@ export default function LiveMeeting() {
   const save = useMutation({
     mutationFn: async () => {
       if (!companyId) throw new Error('업체 정보를 읽지 못했습니다.')
+
       return await saveLiveMeeting({
         companyId,
         met_on: meta.met_on,
@@ -204,15 +271,55 @@ export default function LiveMeeting() {
         aiDraft: draft ? { text: draft.text, minutes: draft.minutes, model: draft.model } : null,
         followUps: todos.filter((t) => t.take).map((t) => t.text),
         sensitive,
-        source: way === '🎧 녹음' ? '녹음전사' : '실시간받아쓰기',
+        // 받아쓴 글이 없으면 「직접입력」이다 — 나중에 전사문을 붙여넣을 회의록이다
+        source:
+          live.segments.length === 0
+            ? '직접입력'
+            : way === '🎧 녹음'
+              ? '녹음전사'
+              : '실시간받아쓰기',
       })
     },
-    onSuccess: () => {
+    onSuccess: async (meetingId) => {
+      /*
+        받아쓰지 못한 소리를 **서버 보관함에 올린다.**
+
+        브라우저 안에만 두면 폰에서 녹음한 것을 노트북에서 못 본다 —
+        회의는 폰으로 하고 정리는 앉아서 하는데 그 흐름이 막힌다.
+        올려 두면 그 회의록을 여는 어느 기기에서나 「다시 받아쓰기」를 누를 수 있다.
+
+        올리다 실패해도 **회의록 저장은 이미 끝났다.** 소리만 못 옮긴 것이므로
+        알리기만 하고 넘어간다 — 여기서 던지면 저장까지 실패한 것처럼 보인다.
+      */
+      const 소리들 = [
+        ...(audio && willUploadAudio ? [{ atMs: 0, reason: '안전망' as const, blob: audio }] : []),
+        ...failed.map((f) => ({ atMs: f.at, reason: '받아쓰기 실패' as const, blob: f.blob })),
+      ]
+      let 올린수 = 0
+      for (const one of 소리들) {
+        if (!companyId) break
+        try {
+          await uploadMeetingAudio({ companyId, meetingId, ...one })
+          올린수 += 1
+        } catch (e) {
+          setRecNote(
+            `소리를 서버에 올리지 못했습니다 — ${e instanceof Error ? e.message : String(e)}`,
+          )
+        }
+      }
+      void qc.invalidateQueries({ queryKey: ['meeting-audio', meetingId] })
+
       const 담긴수 = todos.filter((t) => t.take).length
       setDone(
-        담긴수 > 0
-          ? `회의록을 저장했습니다. 할 일 ${담긴수}건을 인박스로 보냈습니다.`
-          : '회의록을 저장했습니다.',
+        [
+          '회의록을 저장했습니다.',
+          담긴수 > 0 ? `할 일 ${담긴수}건을 인박스로 보냈습니다.` : '',
+          올린수 > 0
+            ? `음성 ${올린수}건을 서버에 함께 보관했습니다. 「📋 지난 회의록」에서 해당 회의를 열면 어느 기기에서나 다시 변환할 수 있습니다.`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
       )
       clearAll()
       void qc.invalidateQueries({ queryKey: ['meetings'] })
@@ -220,8 +327,31 @@ export default function LiveMeeting() {
     },
   })
 
+  /** 변환하지 못한 구간을 다시 보낸다. 성공한 것만 목록에서 뺀다 */
+  async function retryFailed() {
+    setRecNote(null)
+    const left: { blob: Blob; at: number }[] = []
+    for (const item of failed) {
+      setPending((n) => n + 1)
+      try {
+        const got = await transcribeChunk(item.blob, termHint)
+        if (got) setSegments((prev) => appendFinal(prev, got, item.at))
+      } catch (e) {
+        left.push(item)
+        setRecNote(e instanceof Error ? e.message : String(e))
+      } finally {
+        setPending((n) => n - 1)
+      }
+    }
+    setFailed(left)
+    if (left.length === 0) setRecNote(null)
+  }
+
   function clearAll() {
     recorder.stop()
+    safety.stop()
+    setAudio(null)
+    setFailed([])
     live.reset()
     setDraft(null)
     setFix({ agenda: '', decisions: '' })
@@ -249,6 +379,9 @@ export default function LiveMeeting() {
     )
   }
 
+  /** 저장할 때 소리를 올릴 것인가 (사람이 안 정했으면 툴이 정한다) */
+  const willUploadAudio = uploadAudio ?? live.segments.length === 0
+
   const listening = live.status === '듣는중'
   const paused = live.status === '멈춤'
   const finished = live.status === '끝'
@@ -258,12 +391,15 @@ export default function LiveMeeting() {
   // ── 듣기 시작·멈춤 — 고른 길에 따라 갈린다 ──────────────
   async function begin() {
     setRecNote(null)
+    setAudio(null)
     if (recording) {
       live.startTimer()
       const ok = await recorder.start(live.elapsedNow)
       if (!ok) live.pause()
     } else {
       live.start()
+      // 받아쓰기가 글자를 못 내놔도 말이 사라지지 않게, 소리를 따로 담아 둔다
+      if (keepAudio) await safety.start(live.elapsedNow)
     }
   }
   async function again() {
@@ -273,14 +409,17 @@ export default function LiveMeeting() {
       if (!ok) live.pause()
     } else {
       live.resume()
+      if (keepAudio) await safety.start(live.elapsedNow)
     }
   }
   function hold() {
     recorder.stop()
+    safety.stop()
     live.pause()
   }
   function finish() {
     recorder.stop()
+    safety.stop()
     live.stop()
   }
 
@@ -335,7 +474,7 @@ export default function LiveMeeting() {
                   setRecovered(null)
                 }}
               >
-                버리기
+                삭제
               </PillButton>
             </div>
           </div>
@@ -370,9 +509,42 @@ export default function LiveMeeting() {
               </div>
               <p className="text-caption text-ink-mute mt-2 leading-relaxed">
                 {recording
-                  ? '녹음한 소리를 45초마다 서버로 보내 글로 바꿉니다. 어느 폰·태블릿에서도 되고, 사내 용어를 미리 알려 줍니다. 소리 길이만큼 요금이 붙습니다.'
-                  : '브라우저에 들어 있는 받아쓰기를 씁니다. 공짜이고 말하는 즉시 글자가 올라옵니다. 다만 폰에서는 잘 안 될 수 있습니다.'}
+                  ? '녹음한 음성을 45초 단위로 서버에 전송해 문자로 변환합니다. 휴대폰·태블릿에서도 동작하며, 사내 용어를 사전에 전달합니다. 음성 길이에 비례해 비용이 발생합니다.'
+                  : `브라우저에 내장된 받아쓰기 기능을 사용합니다. 별도 비용이 없으며 발언과 동시에 문자로 표시됩니다. 현재 브라우저는 「${browser.name}」입니다.`}
               </p>
+
+              {/* 받아쓰기가 「있는 척만」 하는 브라우저에서는 시작 전에 알린다 */}
+              {!recording && !browser.speechOk && (
+                <p className="text-caption text-alert mt-1.5 leading-relaxed">
+                  ⚠️ <strong className="font-semibold">「{browser.name}」에는 실제로 받아써 주는
+                  기능이 없을 수 있습니다.</strong> 마이크는 열리는데 글자가 안 나오는 식입니다.
+                  크롬에서 열어 보시거나, 아래 「소리도 함께 담아 두기」를 켜고 진행하세요.
+                </p>
+              )}
+
+              {/*
+                ⚠️ 받아쓰기가 글자를 못 내놓으면 **그동안 한 말이 통째로 사라진다.**
+                소리는 어디에도 저장되지 않고 흘러가기 때문이다. 그래서 소리를 따로 담아 둔다.
+                이 소리는 이 브라우저 안에만 있고 서버로 안 간다 — 요금 0원.
+              */}
+              {!recording && (
+                <label className="flex items-start gap-2 text-caption mt-2">
+                  <input
+                    type="checkbox"
+                    checked={keepAudio}
+                    onChange={(e) => setKeepAudio(e.target.checked)}
+                    className="accent-action mt-1 shrink-0"
+                  />
+                  <span className="text-ink-soft">
+                    음성 파일 함께 보관 <span className="text-ink-mute">(안전장치)</span>
+                    <span className="block text-ink-mute leading-relaxed mt-0.5">
+                      받아쓰기가 실패하더라도 <strong className="font-semibold">회의 내용이 유실되지
+                      않습니다.</strong> 종료 후 음성 파일을 내려받을 수 있으며, 이 음성은 외부로
+                      전송되지 않고 비용도 발생하지 않습니다.
+                    </span>
+                  </span>
+                </label>
+              )}
             </div>
           )}
 
@@ -389,7 +561,7 @@ export default function LiveMeeting() {
               aria-hidden
             />
             <span className="text-body font-semibold whitespace-nowrap">
-              {listening ? '듣는 중' : paused ? '잠깐 멈춤' : finished ? '회의 끝' : '대기'}
+              {listening ? '받아쓰는 중' : paused ? '일시정지' : finished ? '회의 종료' : '대기'}
             </span>
             <span className="text-tagline tabular-nums font-semibold text-ink whitespace-nowrap">
               {clock(live.elapsedMs)}
@@ -411,32 +583,32 @@ export default function LiveMeeting() {
             <div className="w-full sm:w-auto sm:ml-auto flex justify-end gap-2 shrink-0">
               {idle && (
                 <PillButton type="button" onClick={() => void begin()}>
-                  듣기 시작
+                  받아쓰기 시작
                 </PillButton>
               )}
               {listening && (
                 <>
                   <PillButton type="button" variant="ghost" onClick={hold}>
-                    잠깐
+                    일시정지
                   </PillButton>
                   <PillButton type="button" onClick={finish}>
-                    끝내기
+                    종료
                   </PillButton>
                 </>
               )}
               {paused && (
                 <>
                   <PillButton type="button" onClick={() => void again()}>
-                    이어서 듣기
+                    이어서 진행
                   </PillButton>
                   <PillButton type="button" variant="ghost" onClick={finish}>
-                    끝내기
+                    종료
                   </PillButton>
                 </>
               )}
-              {finished && stats.lines > 0 && (
+              {finished && (
                 <PillButton type="button" variant="ghost" onClick={() => void again()}>
-                  다시 듣기
+                  다시 시작
                 </PillButton>
               )}
             </div>
@@ -461,22 +633,78 @@ export default function LiveMeeting() {
                   </span>
                 </div>
               ) : (
-                <p className="text-caption text-ink-mute">
+                <p className="text-caption text-ink-mute leading-relaxed">
                   받아쓰기 장치: <strong className="font-semibold">{stageLabel(live.stage)}</strong>
-                  {live.stage === '소리들어옴' || live.stage === '말소리감지'
-                    ? ' — 소리는 들어오는데 아직 글자가 안 나왔습니다.'
-                    : ''}
+                  {live.phrase && ' · 한 마디씩 받는 중'}
+                  {stats.lines === 0 && live.noTextSec > 5 && (
+                    <strong className="font-semibold"> · 아직 글자 없음 {live.noTextSec}초째</strong>
+                  )}
+                  <span className="block text-ink-mute mt-0.5">
+                    {browser.name} · 시도 {live.attempts}회
+                  </span>
+                  {/* 삼켜 버리던 신호를 보여 준다. 「왜 안 되는지 모르겠다」를 없애는 자리 */}
+                  {live.signal && (
+                    <span className="block text-ink-mute mt-0.5">신호: {live.signal}</span>
+                  )}
                 </p>
               )}
             </div>
           )}
 
           {/* 소리는 들어오는데 글자가 안 나오면 다른 길을 권한다 */}
-          {!recording && listening && stats.lines === 0 && live.stage === '말소리감지' && (
+          {/* 잘 안 될 때 **사람이 직접** 방식을 바꾼다. 툴이 알아서 끊지 않는다 */}
+          {!recording && listening && stats.lines === 0 && live.noTextSec >= 12 && !live.phrase && (
             <div className="mt-3 bg-parchment rounded-md px-3.5 py-3">
               <p className="text-caption text-ink-soft leading-relaxed">
-                말소리는 잡히는데 <strong className="font-semibold">글자가 안 올라옵니다.</strong>{' '}
-                이 브라우저의 받아쓰기가 안 되는 것으로 보입니다.
+                {live.noTextSec}초째 글자가 없습니다. 말을 한 마디씩 끊어 받는 방식으로 바꿔 볼 수 있습니다.
+              </p>
+              <button
+                type="button"
+                onClick={live.switchToPhrase}
+                className="text-caption text-action font-semibold mt-1.5"
+              >
+                한 마디씩 받는 방식으로 바꾸기 →
+              </button>
+            </div>
+          )}
+
+          {!recording && listening && stats.lines === 0 && live.noTextSec >= 40 && (
+            <div className="mt-3 bg-parchment rounded-md px-3.5 py-3">
+              <p className="text-caption text-ink-soft leading-relaxed">
+                {live.noTextSec}초가 지나도 <strong className="font-semibold">글자가 한 줄도 안
+                올라옵니다.</strong> 방식을 바꿔 다시 해 봤는데도 그렇습니다 — 이 브라우저의 받아쓰기가
+                안 되는 것으로 보입니다.
+              </p>
+              {keepAudio ? (
+                <p className="text-caption text-ink-mute mt-1.5 leading-relaxed">
+                  ✅ <strong className="font-semibold">소리는 담기고 있습니다.</strong> 회의는 안
+                  유실되지 않습니다. 저장하면 서버에 보관되며, 이후 언제든 다시 변환할 수 있습니다.
+                </p>
+              ) : (
+                <>
+                  <p className="text-caption text-alert mt-1.5 leading-relaxed">
+                    ⚠️ 「소리도 함께 담아 두기」가 꺼져 있어{' '}
+                    <strong className="font-semibold">지금 하신 말은 남지 않습니다.</strong>
+                  </p>
+                  {/*
+                    회의를 끊지 않고 그 자리에서 켠다.
+                    「끝내고 다시 시작하세요」라고만 적어 뒀더니 그동안 한 말이 계속 사라졌다
+                  */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKeepAudio(true)
+                      void safety.start(live.elapsedNow)
+                    }}
+                    className="text-caption text-action font-semibold mt-1"
+                  >
+                    지금부터라도 소리 담기 →
+                  </button>
+                </>
+              )}
+              <p className="text-caption text-ink-mute mt-1.5 leading-relaxed">
+                녹음 방식으로 바꾸면 서버가 받아씁니다. 다만{' '}
+                <strong className="font-semibold">AI 크레딧이 있어야</strong> 돕니다.
               </p>
               <button
                 type="button"
@@ -492,7 +720,7 @@ export default function LiveMeeting() {
           )}
 
           <p className="text-caption text-ink-mute mt-3 leading-relaxed">
-            ⚠️ 듣기 시작을 누르면{' '}
+            ⚠️ 받아쓰기를 시작하면{' '}
             <strong className="font-semibold">
               음성이 {recording ? 'AI 공급자' : '브라우저 제조사'} 서버로 나갑니다.
             </strong>{' '}
@@ -527,8 +755,15 @@ export default function LiveMeeting() {
           )}
         </Card>
 
+        {/*
+          ── 안내·점검은 본문 **바로 위**에 ────────────────────
+          오른쪽 곁칸에 두었더니 「이 회의」만큼 자리를 차지해 눈이 그리로 갔다.
+          이건 **안 될 때만 펴 보는 것**이라 본문 흐름 위에 한 줄로 두는 편이 맞다.
+        */}
+        {!recording && <SpeechCheck />}
+
         <Card
-          title="받아쓴 말"
+          title="받아쓴 내용"
           count={stats.lines}
           action={
             (listening || paused) &&
@@ -538,15 +773,15 @@ export default function LiveMeeting() {
                 onClick={() => live.setSegments((s) => toggleMark(s, s.length - 1))}
                 className="text-caption text-action font-semibold"
               >
-                ★ 지금 중요
+                ★ 중요 표시
               </button>
             )
           }
         >
           {live.segments.length === 0 && !live.interim ? (
             <EmptyState
-              message={idle ? '아직 듣지 않았습니다.' : '말을 기다리는 중입니다.'}
-              hint={idle ? '제목을 적고 「듣기 시작」을 누르세요.' : undefined}
+              message={idle ? '아직 시작하지 않았습니다.' : '음성 입력을 기다리는 중입니다.'}
+              hint={idle ? '회의명을 입력한 뒤 「받아쓰기 시작」을 누르세요.' : undefined}
             />
           ) : (
             <div ref={listRef} className="max-h-[420px] overflow-y-auto -mx-1 px-1">
@@ -569,7 +804,133 @@ export default function LiveMeeting() {
           )}
         </Card>
 
+        {/*
+          ── 저장 자리 ─────────────────────────────────────
+          받아쓴 내용 **바로 아래**에 둔다. 예전에는 초안 카드 밑에 있어서
+          「초안을 만들어야 저장되는 것」처럼 보였다. 저장은 초안과 상관없이 언제든 된다.
+        */}
+        {finished && (
+          <div className="flex flex-wrap items-center gap-2">
+            <PillButton
+              type="button"
+              disabled={save.isPending}
+              onClick={() => {
+                if (!meta.title.trim()) {
+                  setDone(null)
+                  titleRef.current?.focus()
+                  return
+                }
+                save.mutate()
+              }}
+            >
+              {save.isPending ? '저장하는 중…' : '회의록 저장'}
+            </PillButton>
+            <PillButton type="button" variant="ghost" onClick={clearAll}>
+              삭제
+            </PillButton>
+            {!meta.title.trim() ? (
+              <span className="text-caption text-alert">
+                오른쪽 <strong className="font-semibold">「회의명」</strong>을 입력해야 저장됩니다.
+              </span>
+            ) : live.segments.length === 0 ? (
+              <span className="text-caption text-ink-mute">
+                전사문 없이 회의명·참석자·메모만 저장됩니다.
+              </span>
+            ) : (
+              <span className="text-caption text-ink-mute">
+                저장한 뒤 「📋 지난 회의록」에서 초안을 작성할 수 있습니다.
+              </span>
+            )}
+            {save.isError && (
+              <span className="text-caption text-alert">{(save.error as Error).message}</span>
+            )}
+          </div>
+        )}
+
         {/* ── 회의가 끝나면: 초안 ─────────────────────── */}
+        {(audio || failed.length > 0) && finished && (
+          <Card title="보관 중인 음성">
+            {audio && (
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-body text-ink-soft">
+                  이번 회의 음성을 보관했습니다{' '}
+                  <span className="text-caption text-ink-mute">
+                    ({Math.round(audio.size / 1024 / 1024 * 10) / 10}MB)
+                  </span>
+                </span>
+                <PillButton
+                  type="button"
+                  variant="ghost"
+                  onClick={() => downloadBlob(audio, `${meta.met_on}-${meta.title || '회의'}`)}
+                >
+                  음성 내려받기
+                </PillButton>
+              </div>
+            )}
+            {audio && (
+              <>
+                <label className="flex items-start gap-2 text-caption mt-3">
+                  <input
+                    type="checkbox"
+                    checked={willUploadAudio}
+                    onChange={(e) => setUploadAudio(e.target.checked)}
+                    className="accent-action mt-1 shrink-0"
+                  />
+                  <span className="text-ink-soft">
+                    <strong className="font-semibold">「회의록 저장」 시 이 음성도 함께 보관</strong>
+                    <span className="block text-ink-mute leading-relaxed mt-0.5">
+                      서버에 올라갑니다. 이 경우 <strong className="font-semibold">다른 기기에서도</strong>{' '}
+                      해당 회의록을 열어 다시 변환할 수 있습니다. 문자 변환이 완료되면 음성은 자동으로
+                      삭제됩니다.
+                    </span>
+                  </span>
+                </label>
+
+                <p className="text-caption text-alert mt-2 leading-relaxed">
+                  ⚠️ 아직 <strong className="font-semibold">이 브라우저 안에만</strong> 있습니다.{' '}
+                  {willUploadAudio
+                    ? '「회의록 저장」을 누르면 서버에 보관됩니다. 저장하지 않고 이 화면을 벗어나면 삭제됩니다.'
+                    : '위 항목을 선택하지 않으면 저장해도 음성은 보관되지 않습니다.'}
+                </p>
+              </>
+            )}
+
+            {failed.length > 0 && (
+              <div className={audio ? 'mt-4 pt-4 border-t border-hairline' : ''}>
+                <p className="text-body text-ink-soft">
+                  변환하지 못한 구간 <strong className="font-semibold">{failed.length}개</strong>가
+                  남아 있습니다.
+                </p>
+                <p className="text-caption text-ink-mute mt-1 leading-relaxed">
+                  AI 사용 한도로 실패한 경우, 충전 후 다시 시도하면 해당 구간이 복구됩니다.
+                </p>
+                <PillButton
+                  type="button"
+                  variant="ghost"
+                  className="mt-2"
+                  disabled={pending > 0}
+                  onClick={() => void retryFailed()}
+                >
+                  {pending > 0 ? '변환 중…' : '다시 변환'}
+                </PillButton>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {finished && live.segments.length === 0 && (
+          <Card title="받아쓴 글이 없습니다">
+            <p className="text-body text-ink-soft leading-relaxed">
+              받아쓰기가 글자를 내놓지 못했습니다. <strong className="font-semibold">그래도 저장할 수
+              있습니다</strong> — 제목·참석·장소와 회의 중 적으신 메모는 그대로 남습니다.
+            </p>
+            <p className="text-caption text-ink-mute mt-2 leading-relaxed">
+              나중에 「📋 지난 회의록」에서 그 회의를 열어 받아쓴 글을 직접 붙여넣거나 손으로 적을 수
+              있습니다. 버리실 거면 아래 「삭제」를 누르세요.
+            </p>
+          </Card>
+        )}
+
         {finished && live.segments.length > 0 && (
           <Card title="회의록 초안">
             {!draft ? (
@@ -688,34 +1049,15 @@ export default function LiveMeeting() {
           </Card>
         )}
 
-        {finished && live.segments.length > 0 && (
-          <div className="flex items-center gap-2">
-            <PillButton
-              type="button"
-              onClick={() => save.mutate()}
-              disabled={!meta.title.trim() || save.isPending}
-            >
-              {save.isPending ? '저장하는 중…' : '회의록 저장'}
-            </PillButton>
-            <PillButton type="button" variant="ghost" onClick={clearAll}>
-              버리기
-            </PillButton>
-            {!meta.title.trim() && (
-              <span className="text-caption text-ink-mute">제목을 적어야 저장됩니다.</span>
-            )}
-            {save.isError && (
-              <span className="text-caption text-alert">{(save.error as Error).message}</span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* ── 오른쪽: 내가 적는 것 ───────────────────────── */}
       <div className="space-y-5">
         <Card title="이 회의">
           <div className="space-y-3">
-            <Field label="제목">
+            <Field label="회의명">
               <TextInput
+                ref={titleRef}
                 value={meta.title}
                 onChange={(e) => setMeta((p) => ({ ...p, title: e.target.value }))}
                 placeholder="예: 자재 단가 협의"
@@ -728,14 +1070,14 @@ export default function LiveMeeting() {
                 onChange={(e) => setMeta((p) => ({ ...p, met_on: e.target.value }))}
               />
             </Field>
-            <Field label="참석" hint="역할로 적습니다">
+            <Field label="참석자" hint="역할로 적습니다">
               <TextInput
                 value={meta.attendees}
                 onChange={(e) => setMeta((p) => ({ ...p, attendees: e.target.value }))}
                 placeholder="예: 대표, 구매사업본부 담당자"
               />
             </Field>
-            <Field label="장소">
+            <Field label="장소/방식">
               <TextInput
                 value={meta.place}
                 onChange={(e) => setMeta((p) => ({ ...p, place: e.target.value }))}
@@ -779,6 +1121,23 @@ export default function LiveMeeting() {
       </div>
     </div>
   )
+}
+
+/**
+ * 소리 파일을 내려받게 한다.
+ *
+ * 브라우저가 만든 소리는 **이 화면을 벗어나면 사라진다.** 서버에 안 올리기 때문이다
+ * (요금·유출을 피하려고 일부러 그렇게 뒀다). 그래서 사람이 직접 받아 둘 길을 낸다.
+ */
+function downloadBlob(blob: Blob, name: string) {
+  const ext = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm'
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${name}.${ext}`
+  a.click()
+  // 곧바로 지우면 내려받기가 끊긴다. 잠시 뒤 치운다
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 /** 받아쓰기 장치의 단계를 사람 말로 */
