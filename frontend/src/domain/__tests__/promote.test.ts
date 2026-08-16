@@ -52,3 +52,29 @@ describe('toTaskInsert', () => {
     expect(r.detail).toBeNull()
   })
 })
+
+describe('업무 영역 — 회의록 분류가 따라온다', () => {
+  const item = {
+    id: 'I1',
+    user_id: 'U1',
+    company_id: 'C1',
+    content: '대체 거래처 3곳 견적 받기 · 담당 구매담당 · 기한 8/21',
+    tag: '구매',
+    origin: '회의록',
+  }
+
+  it('사람이 영역을 안 골랐으면 인박스 태그를 쓴다', () => {
+    const row = toTaskInsert(item, { priority: 'P2', due_date: null, area: null })
+    expect(row.area).toBe('구매')
+  })
+
+  it('사람이 고른 영역이 태그보다 우선한다', () => {
+    const row = toTaskInsert(item, { priority: 'P2', due_date: null, area: '자금' })
+    expect(row.area).toBe('자금')
+  })
+
+  it('태그도 선택도 없으면 비어 있다', () => {
+    const row = toTaskInsert({ ...item, tag: null }, { priority: 'P2', due_date: null, area: null })
+    expect(row.area).toBeNull()
+  })
+})

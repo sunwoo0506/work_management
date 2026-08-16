@@ -36,6 +36,8 @@ export async function callMinutes(payload: {
   agenda?: string
   myNotes?: string
   glossary?: GlossaryPair[]
+  /** 업무 분류 후보. 「기준 › 설정 › 업무영역」 목록을 그대로 넘긴다 */
+  areas?: string[]
   /** 긴 회의를 나눠 보낼 때, 이번이 몇 번째 구간인지 (1부터) */
   part?: number
   /** 전체 구간 수 */
@@ -223,27 +225,51 @@ export async function updateMeeting(
   if (error) throw error
 }
 
-/** 회의에서 나온 할 일을 인박스로 보낸다. 바로 업무로 만들지 않는다 (설계서 §5.4) */
+/**
+ * 회의에서 나온 할 일을 인박스로 보낸다. 바로 업무로 만들지 않는다 (설계서 §5.4).
+ *
+ * **분류(업무영역)를 태그로 함께 보낸다.** 그래야 인박스에서 업무로 올릴 때
+ * 영역이 미리 골라져 있고, 리포트가 영역별로 집계될 때 회의에서 나온 일도 제자리에 들어간다.
+ */
 export async function sendToInbox(
   companyId: string,
   meetingId: string,
-  texts: string[],
+  items: { text: string; area?: string }[],
 ): Promise<void> {
-  if (texts.length === 0) return
+  if (items.length === 0) return
   const { data: auth } = await supabase.auth.getUser()
   const userId = auth.user?.id
   if (!userId) throw new Error('로그인 정보를 읽지 못했습니다.')
 
   const { error } = await supabase.from('inbox').insert(
-    texts.map((text) => ({
+    items.map((it) => ({
       company_id: companyId,
       user_id: userId,
-      content: text,
+      content: it.text,
+      tag: it.area?.trim() || null,
       origin: '회의록',
       origin_ref: meetingId,
     })),
   )
   if (error) throw error
+}
+
+/**
+ * 업무영역 목록. 「기준 › 설정 › 업무영역」에서 관리하는 것을 그대로 읽는다.
+ *
+ * 회의록 전용 분류를 따로 만들지 않는다 — 두 벌로 관리하면 반드시 어긋나고,
+ * Action Item 이 업무가 될 때 영역을 다시 골라야 한다.
+ */
+export async function loadAreas(companyId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('settings')
+    .select('value')
+    .eq('company_id', companyId)
+    .eq('key', 'areas')
+    .maybeSingle()
+  if (error) throw error
+  const raw = data?.value
+  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
 }
 
 /** 사내 용어집. 「기준 › 설정」에서 관리하는 것을 그대로 읽는다 */

@@ -19,6 +19,7 @@ import {
   deleteMeetingAudio,
   fetchMeetingAudio,
   listMeetingAudio,
+  loadAreas,
   loadGlossary,
   sendToInbox,
   transcribeChunk,
@@ -74,6 +75,13 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const { data: glossary } = useQuery({
     queryKey: ['glossary', companyId],
     queryFn: () => loadGlossary(companyId as string),
+    enabled: !!companyId,
+  })
+
+  /** 「기준 › 설정 › 업무영역」 목록. 회의록 분류로 그대로 쓴다 */
+  const { data: areas } = useQuery({
+    queryKey: ['areas', companyId],
+    queryFn: () => loadAreas(companyId as string),
     enabled: !!companyId,
   })
 
@@ -134,6 +142,7 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
           agenda: agenda || undefined,
           myNotes: i === 0 ? (meeting.my_notes ?? undefined) : undefined,
           glossary: used,
+          areas: areas ?? [],
           part: i + 1,
           parts: chunks.length,
         })
@@ -163,14 +172,14 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
   /** 고른 Action Item 을 인박스로 보내기 보낸다. 바로 업무로 만들지 않는다 (설계서 §5.4) */
   const push = useMutation({
     mutationFn: async () => {
-      const texts = doc.actions
+      const rows = doc.actions
         .filter((_, i) => picked.has(i))
-        .map(actionLine)
-        .filter((t) => t.trim())
-      if (texts.length === 0) throw new Error('보낼 Action Item 을 선택해 주세요.')
-      await sendToInbox(companyId as string, meeting.id, texts)
-      await updateMeeting(meeting.id, { followUps: texts })
-      return texts.length
+        .map((a) => ({ text: actionLine(a), area: a.area }))
+        .filter((r) => r.text.trim())
+      if (rows.length === 0) throw new Error('보낼 Action Item 을 선택해 주세요.')
+      await sendToInbox(companyId as string, meeting.id, rows)
+      await updateMeeting(meeting.id, { followUps: rows.map((r) => r.text) })
+      return rows.length
     },
     onSuccess: (n) => {
       setNote(`Action Item ${n}건을 인박스로 보냈습니다. 인박스에서 업무로 올리시면 됩니다.`)
@@ -350,7 +359,7 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
 
       {tab === '회의록' ? (
         <div className="space-y-4">
-          <MinutesForm value={doc} onChange={setDoc} />
+          <MinutesForm value={doc} onChange={setDoc} areas={areas ?? []} />
 
           {/* ── Action Item → 인박스 ──────────────────
               회의록이 **일로 이어지는 유일한 통로**다. 그래서 AI 초안을 만든 직후만이
@@ -360,7 +369,8 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
               <p className="text-body font-semibold">Action Item 을 인박스로 보내기</p>
               <p className="text-caption text-ink-mute mt-1 leading-relaxed">
                 선택한 항목이 인박스로 전달됩니다. 인박스에서 <strong className="font-semibold">업무로
-                등록하면</strong> 기한과 중요도를 지정할 수 있습니다.
+                등록하면</strong> 기한과 중요도를 지정할 수 있습니다.{' '}
+                <strong className="font-semibold">분류를 지정한 항목은 업무의 영역으로 이어집니다.</strong>
               </p>
               <ul className="mt-2.5 space-y-1.5">
                 {doc.actions.map((a, i) => (
@@ -380,6 +390,9 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
                     />
                     <span className="text-body text-ink-soft leading-relaxed">
                       {actionLine(a) || <span className="text-ink-mute">(내용 없음)</span>}
+                      {a.area && (
+                        <span className="text-caption text-ink-mute ml-1.5">[{a.area}]</span>
+                      )}
                     </span>
                   </li>
                 ))}

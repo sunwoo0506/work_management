@@ -1,4 +1,4 @@
-import { Field, PillButton, TextArea, TextInput } from '../../components/Field'
+import { Field, PillButton, Select, TextArea, TextInput } from '../../components/Field'
 import type { MinutesDoc } from '../../domain/minutes'
 
 /**
@@ -18,9 +18,12 @@ import type { MinutesDoc } from '../../domain/minutes'
 export default function MinutesForm({
   value,
   onChange,
+  areas = [],
 }: {
   value: MinutesDoc
   onChange: (next: MinutesDoc) => void
+  /** 「기준 › 설정 › 업무영역」 목록. 비어 있으면 분류 칸을 숨긴다 */
+  areas?: string[]
 }) {
   const set = <K extends keyof MinutesDoc>(k: K, v: MinutesDoc[K]) =>
     onChange({ ...value, [k]: v })
@@ -29,8 +32,35 @@ export default function MinutesForm({
   const lines = (arr: string[]) => arr.join('\n')
   const toLines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean)
 
+  /**
+   * 분류 고르는 칸.
+   *
+   * 업무영역이 하나도 등록돼 있지 않으면 **아예 그리지 않는다** —
+   * 고를 것이 없는 빈 칸은 화면만 복잡하게 만든다.
+   */
+  const AreaPick = ({ value: v, onPick }: { value: string; onPick: (a: string) => void }) =>
+    areas.length === 0 ? null : (
+      <Select value={v} onChange={(e) => onPick(e.target.value)}>
+        <option value="">분류</option>
+        {areas.map((a) => (
+          <option key={a} value={a}>
+            {a}
+          </option>
+        ))}
+        {v && !areas.includes(v) && <option value={v}>{v} (목록에 없음)</option>}
+      </Select>
+    )
+
   return (
     <div className="space-y-4">
+      {areas.length === 0 && (
+        <p className="text-caption text-ink-mute leading-relaxed">
+          💡 <strong className="font-semibold">기준 › 설정 › 업무영역</strong>에 영역을 등록하시면
+          결정사항·Action Item 에 분류를 붙일 수 있습니다. 그 분류는 인박스를 거쳐{' '}
+          <strong className="font-semibold">업무의 영역으로 이어집니다.</strong>
+        </p>
+      )}
+
       <Field label="2. 회의 목적" hint="회의를 통해 확인하거나 결정해야 하는 사항">
         <TextArea
           rows={2}
@@ -55,7 +85,14 @@ export default function MinutesForm({
         ) : (
           <ul className="space-y-2">
             {value.discussions.map((d, i) => (
-              <li key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_2fr_1fr] gap-2">
+              <li
+                key={i}
+                className={
+                  areas.length > 0
+                    ? 'grid grid-cols-1 sm:grid-cols-[1fr_2fr_1fr_110px] gap-2'
+                    : 'grid grid-cols-1 sm:grid-cols-[1fr_2fr_1fr] gap-2'
+                }
+              >
                 <TextInput
                   value={d.topic}
                   placeholder="안건"
@@ -92,6 +129,15 @@ export default function MinutesForm({
                     )
                   }
                 />
+                <AreaPick
+                  value={d.area}
+                  onPick={(a) =>
+                    set(
+                      'discussions',
+                      value.discussions.map((x, j) => (j === i ? { ...x, area: a } : x)),
+                    )
+                  }
+                />
               </li>
             ))}
           </ul>
@@ -101,7 +147,10 @@ export default function MinutesForm({
           variant="ghost"
           className="mt-2"
           onClick={() =>
-            set('discussions', [...value.discussions, { topic: '', points: '', result: '' }])
+            set('discussions', [
+              ...value.discussions,
+              { topic: '', points: '', result: '', area: '' },
+            ])
           }
         >
           ＋ 논의 줄
@@ -120,7 +169,13 @@ export default function MinutesForm({
             {value.decisions.map((d, i) => (
               <li key={i} className="flex flex-wrap items-start gap-2">
                 <span className="text-caption text-ink-mute w-5 shrink-0 pt-2.5">{i + 1}</span>
-                <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-2 flex-1 min-w-0">
+                <div
+                  className={
+                    areas.length > 0
+                      ? 'grid grid-cols-1 sm:grid-cols-[2fr_1fr_110px] gap-2 flex-1 min-w-0'
+                      : 'grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-2 flex-1 min-w-0'
+                  }
+                >
                   <TextInput
                     value={d.text}
                     placeholder="결정 내용"
@@ -145,6 +200,15 @@ export default function MinutesForm({
                       )
                     }
                   />
+                  <AreaPick
+                    value={d.area}
+                    onPick={(a) =>
+                      set(
+                        'decisions',
+                        value.decisions.map((x, j) => (j === i ? { ...x, area: a } : x)),
+                      )
+                    }
+                  />
                 </div>
                 <button
                   type="button"
@@ -161,7 +225,9 @@ export default function MinutesForm({
           type="button"
           variant="ghost"
           className="mt-2"
-          onClick={() => set('decisions', [...value.decisions, { text: '', note: '' }])}
+          onClick={() =>
+            set('decisions', [...value.decisions, { text: '', note: '', area: '' }])
+          }
         >
           ＋ 결정사항
         </PillButton>
@@ -171,7 +237,9 @@ export default function MinutesForm({
       <div>
         <p className="text-caption text-ink-soft mb-1.5">
           6. Action Item{' '}
-          <span className="text-ink-mute">— 해야 할 업무 / 담당자 / 완료기한</span>
+          <span className="text-ink-mute">
+            — 해야 할 업무 / 담당자 / 완료기한{areas.length > 0 && ' / 분류'}
+          </span>
         </p>
         {value.actions.length === 0 ? (
           <p className="text-caption text-ink-mute">없음</p>
@@ -180,7 +248,13 @@ export default function MinutesForm({
             {value.actions.map((a, i) => (
               <li key={i} className="flex flex-wrap items-start gap-2">
                 <span className="text-caption text-ink-mute w-5 shrink-0 pt-2.5">{i + 1}</span>
-                <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr] gap-2 flex-1 min-w-0">
+                <div
+                  className={
+                    areas.length > 0
+                      ? 'grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_110px] gap-2 flex-1 min-w-0'
+                      : 'grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr] gap-2 flex-1 min-w-0'
+                  }
+                >
                   <TextInput
                     value={a.text}
                     placeholder="해야 할 일"
@@ -211,6 +285,15 @@ export default function MinutesForm({
                       )
                     }
                   />
+                  <AreaPick
+                    value={a.area}
+                    onPick={(picked) =>
+                      set(
+                        'actions',
+                        value.actions.map((x, j) => (j === i ? { ...x, area: picked } : x)),
+                      )
+                    }
+                  />
                 </div>
                 <button
                   type="button"
@@ -228,7 +311,10 @@ export default function MinutesForm({
           variant="ghost"
           className="mt-2"
           onClick={() =>
-            set('actions', [...value.actions, { text: '', owner: '', due: '', status: '예정' }])
+            set('actions', [
+              ...value.actions,
+              { text: '', owner: '', due: '', status: '예정', area: '' },
+            ])
           }
         >
           ＋ Action Item

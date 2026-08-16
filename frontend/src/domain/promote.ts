@@ -49,7 +49,12 @@ export function toTaskInsert(item: InboxLike, choice: PromoteChoice): TaskInsert
     status: '할 일',
     priority: choice.priority,
     due_date: choice.due_date,
-    area: choice.area,
+    /*
+      사람이 고른 영역이 우선이고, 안 골랐으면 **인박스 태그를 쓴다.**
+      회의록에서 넘어온 항목에는 그때 정한 분류가 태그로 붙어 있다 —
+      같은 걸 두 번 고르게 하지 않는다.
+    */
+    area: choice.area ?? item.tag,
     progress: 0,
   }
 }

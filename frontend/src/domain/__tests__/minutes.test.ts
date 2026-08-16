@@ -16,16 +16,16 @@ const 답 = `[목적]
 - 대체 거래처 검토
 
 [논의]
-- 단가 인상 폭 확인 | 12% 인상 통보를 받음 | 근거 자료를 요청하기로
-- 대체 거래처 검토 | 두 곳이 후보 | 견적을 받아 보기로
+- 단가 인상 폭 확인 | 12% 인상 통보를 받음 | 근거 자료를 요청하기로 | 구매
+- 대체 거래처 검토 | 두 곳이 후보 | 견적을 받아 보기로 | 구매
 
 [결정]
-- 이번 달 발주는 기존 단가로 진행한다 | 계약서 조항 근거
-- 대체 거래처를 검토한다 |
+- 이번 달 발주는 기존 단가로 진행한다 | 계약서 조항 근거 | 자금
+- 대체 거래처를 검토한다 | |
 
 [할 일]
-- 대체 거래처 3곳 견적 받기 | 구매담당 | 8/21
-- 단가 인상 공문 회신 | 경영지원 | 8/19
+- 대체 거래처 3곳 견적 받기 | 구매담당 | 8/21 | 구매
+- 단가 인상 공문 회신 | 경영지원 | 8/19 | 총무
 
 [미결]
 - 장기 계약 전환 여부
@@ -49,6 +49,7 @@ describe('parseMinutesDoc — AI 글을 회의록 양식으로', () => {
       topic: '단가 인상 폭 확인',
       points: '12% 인상 통보를 받음',
       result: '근거 자료를 요청하기로',
+      area: '구매',
     })
   })
 
@@ -60,11 +61,29 @@ describe('parseMinutesDoc — AI 글을 회의록 양식으로', () => {
       owner: '구매담당',
       due: '8/21',
       status: '예정',
+      area: '구매',
     })
   })
 
   it('비어 있는 칸은 빈 글로 채운다', () => {
     expect(m.decisions[1].note).toBe('')
+    expect(m.decisions[1].area).toBe('')
+  })
+
+  it('★ 분류(업무영역)를 맨 뒤 칸에서 읽는다', () => {
+    expect(m.decisions[0].area).toBe('자금')
+    expect(m.actions[1].area).toBe('총무')
+  })
+
+  it('분류 칸이 없는 예전 형식도 읽는다', () => {
+    const old = parseMinutesDoc('[할 일]\n- 견적 받기 | 담당자 | 내일')
+    expect(old.actions[0]).toEqual({
+      text: '견적 받기',
+      owner: '담당자',
+      due: '내일',
+      status: '예정',
+      area: '',
+    })
   })
 
   it('다음 회의는 예정일과 안건으로', () => {
@@ -112,6 +131,11 @@ describe('minutesToText — 읽는 글로 내보내기', () => {
     expect(text).toContain('## 5. 결정사항')
     expect(text).toContain('## 6. Action Item')
     expect(text).toContain('담당 구매담당')
+  })
+
+  it('분류가 대괄호로 붙는다', () => {
+    expect(text).toContain('[자금]')
+    expect(text).toContain('[구매]')
   })
 
   it('빈 칸은 아예 안 적는다 — 빈 제목만 늘어놓지 않는다', () => {

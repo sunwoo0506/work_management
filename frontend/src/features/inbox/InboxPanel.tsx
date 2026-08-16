@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { PillButton, Select, TextInput } from '../../components/Field'
 import { Card } from '../../components/ui'
 import { AREAS, PRIORITIES } from '../../domain/types'
 import type { Priority } from '../../domain/types'
+import { useCompanyId } from '../companies/useCompany'
+import { loadAreas } from '../meetings/api'
 import { useCaptureInbox, useDiscardInbox, useInbox, usePromoteInbox } from './hooks'
 import type { InboxItem } from './hooks'
 
@@ -78,15 +81,31 @@ function InboxRow({ item, onPromote }: { item: InboxItem; onPromote: () => void 
 
 function PromoteDialog({ item, onClose }: { item: InboxItem; onClose: () => void }) {
   const promote = usePromoteInbox()
+  const companyId = useCompanyId()
   const [priority, setPriority] = useState<Priority>('P1')
   const [dueDate, setDueDate] = useState('')
-  const [area, setArea] = useState('')
+  // 회의록에서 넘어온 항목은 분류가 붙어 있다. 그걸 그대로 첫 값으로 쓴다 —
+  // 이미 한 번 고른 것을 여기서 또 고르게 하지 않는다
+  const [area, setArea] = useState(item.tag ?? '')
+
+  /** 「기준 › 설정 › 업무영역」에 등록한 것이 있으면 그것을, 없으면 기본 갈래를 쓴다 */
+  const { data: custom } = useQuery({
+    queryKey: ['areas', companyId],
+    queryFn: () => loadAreas(companyId as string),
+    enabled: !!companyId,
+  })
+  const options = custom && custom.length > 0 ? custom : [...AREAS]
 
   return (
     <div className="fixed inset-0 bg-ink/20 grid place-items-center px-6 z-50">
       <div className="bg-canvas rounded-lg border border-hairline p-6 w-full max-w-[440px]">
         <h3 className="text-tagline font-semibold">업무로 올리기</h3>
         <p className="text-body text-ink-soft mt-2 line-clamp-3">{item.content}</p>
+        {item.tag && (
+          <p className="text-caption text-ink-mute mt-1">
+            회의록에서 <strong className="font-semibold">「{item.tag}」</strong> 분류로 넘어왔습니다.
+          </p>
+        )}
         {item.content.length > 60 && (
           <p className="text-caption text-ink-mute mt-1">
             60자가 넘어 제목은 잘리고 전문은 상세에 들어갑니다.
@@ -108,7 +127,8 @@ function PromoteDialog({ item, onClose }: { item: InboxItem; onClose: () => void
             <span className="block text-caption text-ink-soft mb-1.5">영역</span>
             <Select value={area} onChange={(e) => setArea(e.target.value)}>
               <option value="">—</option>
-              {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
+              {options.map((a) => <option key={a} value={a}>{a}</option>)}
+              {area && !options.includes(area) && <option value={area}>{area}</option>}
             </Select>
           </label>
         </div>

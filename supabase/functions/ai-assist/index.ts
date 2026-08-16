@@ -7,6 +7,7 @@ import {
   ASK_RULES_WEB,
   CHECKLIST_RULES,
   FOCUS_REMINDER,
+  MINUTES_AREA_NOTE,
   MINUTES_PART_NOTE,
   MINUTES_RULES,
 } from './prompt.ts'
@@ -178,6 +179,15 @@ async function minutes(body: any) {
   const part = Number(body?.part ?? 0)
   const parts = Number(body?.parts ?? 0)
   const partNote = parts > 1 && part > 0 ? MINUTES_PART_NOTE(part, parts) : ''
+
+  /**
+   * 업무 분류 목록. 화면이 「기준 › 설정 › 업무영역」에서 읽어 보낸다.
+   * 없으면 분류를 요구하지 않는다 — 고를 것이 없으면 AI 는 지어낸다.
+   */
+  const areas: string[] = Array.isArray(body?.areas)
+    ? body.areas.filter((a: unknown) => typeof a === 'string' && a.trim()).slice(0, 30)
+    : []
+  const areaNote = areas.length > 0 ? MINUTES_AREA_NOTE(areas) : ''
 
   const provider = getProvider()
   const result = await provider.chat(

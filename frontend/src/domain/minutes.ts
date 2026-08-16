@@ -13,14 +13,27 @@
  * ⚠️ 여기에는 AI 도 화면도 없다. **글을 칸으로 나누고 다시 글로 만드는 계산**뿐이다.
  */
 
+/**
+ * 업무 분류 — 「기준 › 설정 › 업무영역」의 목록을 그대로 쓴다.
+ *
+ * ── 왜 회의록에 분류를 다나 ──────────────────────────────
+ * ① *"이번 달 회의에서 세무 관련 결정이 뭐였나"* 를 찾을 수 있다
+ * ② **Action Item 이 인박스를 거쳐 업무가 될 때 이 분류가 따라간다.**
+ *    그러면 리포트가 영역별로 집계될 때 회의에서 나온 일도 제자리에 들어간다
+ *
+ * 회의록 전용 분류를 따로 만들지 않는다. 두 벌로 관리하면 반드시 어긋난다.
+ */
+export type Area = string
+
 export type Discussion = {
   /** 어느 안건에 대한 이야기인가 */
   topic: string
   points: string
   result: string
+  area: Area
 }
 
-export type Decision = { text: string; note: string }
+export type Decision = { text: string; note: string; area: Area }
 
 export type ActionItem = {
   text: string
@@ -28,6 +41,7 @@ export type ActionItem = {
   /** 완료 기한. 「8/21」처럼 말한 그대로 둔다 — 날짜로 굳히는 것은 사람이 확인한 뒤 */
   due: string
   status: string
+  area: Area
 }
 
 export type MinutesDoc = {
@@ -133,19 +147,24 @@ export function parseMinutesDoc(text: string): MinutesDoc {
       case 'agenda':
         out.agenda.push(line.slice(0, 200))
         break
+      /*
+        분류는 **맨 뒤 칸**에 온다. 가운데 끼워 넣지 않는 이유 —
+        칸 순서를 바꾸면 예전에 저장된 회의록과 AI 가 내놓는 글이 어긋난다.
+        뒤에 붙이면 없어도 읽히고 있으면 읽힌다.
+      */
       case 'discussions': {
-        const [topic, points, result] = cells(line, 3)
-        out.discussions.push({ topic, points, result })
+        const [topic, points, result, area] = cells(line, 4)
+        out.discussions.push({ topic, points, result, area })
         break
       }
       case 'decisions': {
-        const [t, note] = cells(line, 2)
-        out.decisions.push({ text: t, note })
+        const [t, note, area] = cells(line, 3)
+        out.decisions.push({ text: t, note, area })
         break
       }
       case 'actions': {
-        const [t, owner, due] = cells(line, 3)
-        out.actions.push({ text: t, owner, due, status: '예정' })
+        const [t, owner, due, area] = cells(line, 4)
+        out.actions.push({ text: t, owner, due, status: '예정', area })
         break
       }
       case 'pending':
@@ -204,19 +223,23 @@ export function minutesToText(
 
   block('## 2. 회의 목적', m.purpose.map((p) => `- ${p}`))
   block('## 3. 주요 안건', m.agenda.map((a, i) => `${i + 1}. ${a}`))
+  const tag = (area: string) => (area ? ` [${area}]` : '')
+
   block(
     '## 4. 안건별 논의 내용',
-    m.discussions.map((d) => `- ${d.topic} | ${d.points}${d.result ? ` → ${d.result}` : ''}`),
+    m.discussions.map(
+      (d) => `- ${d.topic}${tag(d.area)} | ${d.points}${d.result ? ` → ${d.result}` : ''}`,
+    ),
   )
   block(
     '## 5. 결정사항',
-    m.decisions.map((d, i) => `${i + 1}. ${d.text}${d.note ? ` (${d.note})` : ''}`),
+    m.decisions.map((d, i) => `${i + 1}. ${d.text}${tag(d.area)}${d.note ? ` (${d.note})` : ''}`),
   )
   block(
     '## 6. Action Item',
     m.actions.map(
       (a, i) =>
-        `${i + 1}. ${a.text} | 담당 ${a.owner || '미정'} | 기한 ${a.due || '미정'} | ${a.status}`,
+        `${i + 1}. ${a.text}${tag(a.area)} | 담당 ${a.owner || '미정'} | 기한 ${a.due || '미정'} | ${a.status}`,
     ),
   )
   block('## 7. 미결·추가 확인사항', m.pending.map((p) => `- ${p}`))
