@@ -21,8 +21,34 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  *    멈췄다 다시 시작하면 토막마다 완전한 파일이 된다.
  */
 
-/** 토막 길이. 짧으면 자주 보이지만 호출이 늘고, 길면 뜸하게 보인다 */
-const CHUNK_MS = 45_000
+/**
+ * 토막 길이 — **2026-08-19 에 45초에서 15초로 줄였다.**
+ *
+ * ── 왜 줄였나 ────────────────────────────────────────────
+ * 부장님이 *"음성 받아쓰기가 안 된다"* 고 하셨다. 실은 되고 있었다.
+ * **45초 동안 글자가 한 자도 안 올라와서 고장 난 줄 아신 것**이다.
+ * 소리 막대는 움직이지만 그건 「마이크가 살아 있다」는 증거일 뿐,
+ * 「받아쓰기가 되고 있다」는 증거가 아니다. **사람이 믿는 것은 글자다.**
+ *
+ * ── 왜 그냥 다 짧게 하지 않나 ────────────────────────────
+ * 토막을 자르는 자리에서 **말이 잘린다.** 잘린 단어는 양쪽 토막에서 다 틀리게
+ * 적힌다. 45분 회의면 45초 토막은 60번, 15초 토막은 180번 잘린다.
+ * 짧게 할수록 자주 보이지만 **그만큼 더 틀린다.**
+ *
+ * 요금은 거의 안 는다 — 받아쓰기 값은 **소리의 길이**로 매겨지지 호출 횟수로
+ * 매겨지지 않는다. 그래서 이 선택은 「돈」이 아니라 **「빨리 보기 ↔ 정확도」**다.
+ * 15초면 한국어 문장 두세 개가 들어가 문맥이 크게 깨지지 않는다.
+ */
+const CHUNK_MS = 15_000
+
+/**
+ * **첫 토막만 더 짧게 간다.**
+ *
+ * 처음 한 번은 목적이 다르다 — 받아쓴 글을 얻는 게 아니라 **「되고 있다」를
+ * 보여 주는 것**이다. 그건 6초면 된다. 회의가 시작되고 나면 그 조바심은
+ * 사라지고 정확도가 중요해지므로 그다음부터는 위 길이로 돌아간다.
+ */
+const FIRST_CHUNK_MS = 6_000
 
 export type RecorderStatus = '준비' | '녹음중' | '멈춤'
 
@@ -48,8 +74,15 @@ export function useRecorder(
   onChunkRef.current = onChunk
   const [status, setStatus] = useState<RecorderStatus>('준비')
   const [error, setError] = useState<string | null>(null)
-  /** 지금 마이크에 잡히는 소리 크기 (0~1). **듣고 있다는 유일한 증거다** */
+  /** 지금 마이크에 잡히는 소리 크기 (0~1). 마이크가 살아 있다는 증거 */
   const [level, setLevel] = useState(0)
+  /**
+   * 다음 글이 올라오기까지 남은 초.
+   *
+   * **이게 없으면 기다리는 시간이 「고장 난 시간」이 된다.** 소리 막대는
+   * 마이크가 산 것만 알려 준다. 얼마나 더 기다리면 되는지는 말해 주지 않는다.
+   */
+  const [nextInSec, setNextInSec] = useState(0)
 
   const streamRef = useRef<MediaStream | null>(null)
   const recRef = useRef<MediaRecorder | null>(null)
@@ -59,6 +92,10 @@ export function useRecorder(
   const wantRef = useRef(false)
   /** 이 토막이 시작된 시각 (회의 시작으로부터 흐른 ms) */
   const chunkAtRef = useRef(0)
+  /** 아직 첫 토막인가 — 첫 번째만 짧게 끊는다 */
+  const firstRef = useRef(true)
+  /** 지금 토막이 끝날 벽시계 시각. 남은 초를 세는 데 쓴다 */
+  const endsAtRef = useRef(0)
   const elapsedRef = useRef<() => number>(() => 0)
 
   const supported =
@@ -138,13 +175,19 @@ export function useRecorder(
     rec.start()
     // 0 이면 시계를 걸지 않는다 — 사람이 「끝내기」를 누를 때까지 한 파일로 담는다
     if (chunkMs > 0) {
+      // 첫 토막만 짧게. 「되고 있다」를 빨리 보여 주는 것이 목적이다
+      const len = firstRef.current ? Math.min(FIRST_CHUNK_MS, chunkMs) : chunkMs
+      firstRef.current = false
+      endsAtRef.current = Date.now() + len
+      setNextInSec(Math.ceil(len / 1000))
+
       timerRef.current = window.setTimeout(() => {
         try {
           if (rec.state !== 'inactive') rec.stop()
         } catch {
           // 이미 멈춰 있으면 무시
         }
-      }, chunkMs)
+      }, len)
     }
   }, [pickMime, chunkMs])
 
@@ -167,6 +210,8 @@ export function useRecorder(
         })
         streamRef.current = stream
         wantRef.current = true
+        // 멈췄다 다시 시작해도 첫 토막은 짧게 — 그때도 「되나?」가 다시 궁금해진다
+        firstRef.current = true
         watchLevel(stream)
         spin()
         setStatus('녹음중')
@@ -205,8 +250,26 @@ export function useRecorder(
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
     setLevel(0)
+    setNextInSec(0)
     setStatus('멈춤')
   }, [])
+
+  /**
+   * 남은 초를 1초마다 센다.
+   *
+   * 소리 막대와 달리 이건 **초 단위로만** 바뀌므로 화면을 자주 다시 그리지 않는다.
+   * 녹음 중이 아닐 때는 시계를 아예 걸지 않는다.
+   */
+  useEffect(() => {
+    if (status !== '녹음중' || chunkMs <= 0) {
+      setNextInSec(0)
+      return
+    }
+    const id = window.setInterval(() => {
+      setNextInSec(Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000)))
+    }, 500)
+    return () => clearInterval(id)
+  }, [status, chunkMs])
 
   // 화면을 떠나면 마이크를 반드시 끈다. 안 끄면 계속 녹음된다
   useEffect(() => () => {
@@ -217,5 +280,17 @@ export function useRecorder(
     streamRef.current?.getTracks().forEach((t) => t.stop())
   }, [])
 
-  return { supported, status, level, error, start, stop, clearError: () => setError(null) }
+  return {
+    supported,
+    status,
+    level,
+    /** 다음 글이 올라오기까지 남은 초 */
+    nextInSec,
+    /** 토막 길이(초). 화면이 「몇 초마다 올라온다」를 안내할 때 쓴다 */
+    chunkSec: Math.round(chunkMs / 1000),
+    error,
+    start,
+    stop,
+    clearError: () => setError(null),
+  }
 }

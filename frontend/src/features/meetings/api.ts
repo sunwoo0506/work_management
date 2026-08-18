@@ -64,7 +64,7 @@ export async function callMinutes(payload: {
  */
 export async function transcribeChunk(blob: Blob, hint?: string): Promise<string> {
   // 몰려서 거절당하는 것은 **기다리면 풀린다.** 두 번까지 스스로 다시 해 본다.
-  // 여기서 포기하면 그 45초 동안 한 말이 통째로 사라진다
+  // 여기서 포기하면 그 토막 동안 한 말이 통째로 사라진다
   const waits = [4_000, 12_000]
 
   for (let attempt = 0; ; attempt++) {

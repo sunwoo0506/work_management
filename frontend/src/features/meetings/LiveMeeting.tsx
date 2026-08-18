@@ -53,7 +53,7 @@ const DRAFT_KEY = 'work-management:live-meeting'
  * ⚡ 브라우저   : 브라우저에 내장된 받아쓰기. 공짜, 말하는 즉시 글자.
  *                **폰에서는 잘 안 된다** — 삼성 인터넷엔 없고, 안드로이드 크롬은 자꾸 끊긴다
  * 🎧 녹음      : 브라우저는 녹음만 하고 **서버가 받아쓴다**.
- *                45초마다 글이 올라오고, 기기를 안 가리며, 사내 용어를 미리 알려 줄 수 있다.
+ *                15초마다 글이 올라오고, 기기를 안 가리며, 사내 용어를 미리 알려 줄 수 있다.
  *                대신 소리 길이만큼 요금이 붙는다
  */
 const WAYS = ['⚡ 브라우저', '🎧 녹음'] as const
@@ -201,7 +201,7 @@ export default function LiveMeeting() {
       } catch (e) {
         // 토막 하나가 실패해도 회의는 계속돼야 한다. 알리기만 하고 넘어간다.
         // ⚠️ 소리는 **버리지 않고 들고 있는다** — 크레딧이 없어 실패한 것이라면
-        //    채운 뒤 다시 보내면 그 45초가 되살아난다
+        //    채운 뒤 다시 보내면 그 토막이 되살아난다
         setFailed((prev) => [...prev, { blob, at: atMs }])
         setRecNote(e instanceof Error ? e.message : String(e))
       } finally {
@@ -561,7 +561,7 @@ export default function LiveMeeting() {
               </div>
               <p className="text-caption text-ink-mute mt-2 leading-relaxed">
                 {recording
-                  ? '녹음한 음성을 45초 단위로 서버에 전송해 문자로 변환합니다. 휴대폰·태블릿에서도 동작하며, 사내 용어를 사전에 전달합니다. 음성 길이에 비례해 비용이 발생합니다.'
+                  ? '녹음한 음성을 15초 단위로 서버에 전송해 문자로 변환합니다(첫 토막은 6초). 휴대폰·태블릿에서도 동작하며, 사내 용어를 사전에 전달합니다. 음성 길이에 비례해 비용이 발생합니다.'
                   : `브라우저에 내장된 받아쓰기 기능을 사용합니다. 별도 비용이 없으며 발언과 동시에 문자로 표시됩니다. 현재 브라우저는 「${browser.name}」입니다.`}
               </p>
 
@@ -680,8 +680,18 @@ export default function LiveMeeting() {
                       style={{ width: `${Math.round(recorder.level * 100)}%` }}
                     />
                   </div>
+                  {/*
+                    ⚠️ 여기에 「45초마다 올라옵니다」라고만 적혀 있었다.
+                    그 45초 동안 글자가 한 자도 안 올라와서 **고장 난 줄 아셨다**(2026-08-19).
+                    이제 토막을 15초로 줄이고, **남은 초를 세어 보여 준다** —
+                    기다리는 시간과 고장 난 시간을 사람이 구분할 수 있어야 한다.
+                  */}
                   <span className="text-caption text-ink-mute shrink-0 tabular-nums">
-                    {pending > 0 ? `받아쓰는 중 ${pending}` : '45초마다 올라옵니다'}
+                    {pending > 0
+                      ? `받아쓰는 중 ${pending}`
+                      : stats.lines === 0
+                        ? `첫 글 ${recorder.nextInSec}초 뒤`
+                        : `다음 글 ${recorder.nextInSec}초 뒤`}
                   </span>
                 </div>
               ) : (
