@@ -1,4 +1,5 @@
 import type { MinutesDoc } from '../../domain/minutes'
+import { timeRange } from '../../domain/transcript'
 
 /**
  * 회의록을 **PDF로 내려받게** 한다.
@@ -21,6 +22,9 @@ export type MinutesHead = {
   attendees?: string | null
   writer?: string | null
   durationSec?: number | null
+  /** 회의 시작·종료 벽시계 시각. 양식 1번 기본정보의 「시간」 칸 */
+  startedAt?: string | null
+  endedAt?: string | null
 }
 
 /** 인쇄용 문서를 그린다 */
@@ -73,8 +77,8 @@ function html(m: MinutesDoc, head: MinutesHead): string {
   <dl>
     <dt>회의명</dt><dd>${esc(head.title)}</dd>
     <dt>일시</dt><dd>${esc(head.metOn)}${
-      head.durationSec ? ` (${Math.round(head.durationSec / 60)}분)` : ''
-    }</dd>
+      timeRange(head.startedAt, head.endedAt) ? ` ${esc(timeRange(head.startedAt, head.endedAt))}` : ''
+    }${head.durationSec ? ` (${Math.round(head.durationSec / 60)}분)` : ''}</dd>
     ${head.place ? `<dt>장소/방식</dt><dd>${esc(head.place)}</dd>` : ''}
     ${head.attendees ? `<dt>참석자</dt><dd>${esc(head.attendees)}</dd>` : ''}
     ${head.writer ? `<dt>작성자</dt><dd>${esc(head.writer)}</dd>` : ''}

@@ -130,6 +130,14 @@ export type SaveLiveMeetingInput = {
    * 받아쓴 글 없이 회의록 껍데기만 만들 때는 「직접입력」이다.
    */
   source: '실시간받아쓰기' | '녹음전사' | '직접입력'
+  /**
+   * 회의 시작·종료 벽시계 시각 「HH:MM」.
+   *
+   * 실시간 받아쓰기는 **손으로 안 적어도 된다** — 이미 시간을 재고 있으니
+   * 화면이 찍어서 넘긴다. 붙여넣기·직접입력은 비어 있고 나중에 손으로 채운다.
+   */
+  startedAt?: string | null
+  endedAt?: string | null
 }
 
 /**
@@ -157,6 +165,8 @@ export async function saveLiveMeeting(v: SaveLiveMeetingInput): Promise<string> 
       transcript: v.transcript || null,
       my_notes: v.myNotes || null,
       duration_sec: v.durationSec > 0 ? Math.round(v.durationSec) : null,
+      started_at: v.startedAt || null,
+      ended_at: v.endedAt || null,
       transcript_source: v.source,
       ai_draft: (v.aiDraft as unknown as Json) ?? null,
       follow_ups: v.followUps.map((text) => ({ text, task_id: null })) as unknown as Json,
@@ -387,7 +397,15 @@ export async function deleteMeeting(id: string): Promise<void> {
 /** 회의의 겉면(제목·일자·장소·참석)을 고친다 */
 export async function updateMeetingHead(
   id: string,
-  head: { met_on: string; title: string; place: string; attendees: string },
+  head: {
+    met_on: string
+    title: string
+    place: string
+    attendees: string
+    writer: string
+    started_at: string
+    ended_at: string
+  },
 ): Promise<void> {
   const { error } = await supabase
     .from('meetings')
@@ -396,6 +414,10 @@ export async function updateMeetingHead(
       title: head.title.trim(),
       place: head.place || null,
       attendees: head.attendees || null,
+      writer: head.writer.trim() || null,
+      // 빈 칸은 null 로 — 빈 문자열을 넣으면 time 형이 안 받는다
+      started_at: head.started_at || null,
+      ended_at: head.ended_at || null,
     })
     .eq('id', id)
   if (error) throw error

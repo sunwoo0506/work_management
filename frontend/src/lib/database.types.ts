@@ -1108,6 +1108,7 @@ export type Database = {
           created_at: string
           decisions: string | null
           duration_sec: number | null
+          ended_at: string | null
           follow_ups: Json
           id: string
           met_on: string
@@ -1115,6 +1116,7 @@ export type Database = {
           my_notes: string | null
           place: string | null
           sensitive: boolean
+          started_at: string | null
           title: string
           transcript: string | null
           transcript_source: string
@@ -1130,6 +1132,7 @@ export type Database = {
           created_at?: string
           decisions?: string | null
           duration_sec?: number | null
+          ended_at?: string | null
           follow_ups?: Json
           id?: string
           met_on: string
@@ -1137,6 +1140,7 @@ export type Database = {
           my_notes?: string | null
           place?: string | null
           sensitive?: boolean
+          started_at?: string | null
           title: string
           transcript?: string | null
           transcript_source?: string
@@ -1152,6 +1156,7 @@ export type Database = {
           created_at?: string
           decisions?: string | null
           duration_sec?: number | null
+          ended_at?: string | null
           follow_ups?: Json
           id?: string
           met_on?: string
@@ -1159,6 +1164,7 @@ export type Database = {
           my_notes?: string | null
           place?: string | null
           sensitive?: boolean
+          started_at?: string | null
           title?: string
           transcript?: string | null
           transcript_source?: string

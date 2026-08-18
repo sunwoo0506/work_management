@@ -6,6 +6,7 @@ import { ymd } from '../../domain/daily'
 import {
   clock,
   editSegment,
+  hhmm,
   parseMinutes,
   toggleMark,
   transcriptStats,
@@ -87,7 +88,14 @@ function isTouchDevice(): boolean {
 }
 
 type Meta = { met_on: string; title: string; place: string; attendees: string }
-type Saved = { meta: Meta; segments: Segment[]; elapsedMs: number; myNotes: string }
+type Saved = {
+  meta: Meta
+  segments: Segment[]
+  elapsedMs: number
+  myNotes: string
+  /** 회의가 실제로 시작된 벽시계 시각 「HH:MM」. 탭이 닫혔다 열려도 잃지 않게 같이 적어 둔다 */
+  startedAt?: string
+}
 type Draft = { text: string; minutes: Minutes; model: string; truncated?: boolean }
 
 export default function LiveMeeting() {
@@ -107,6 +115,15 @@ export default function LiveMeeting() {
   const [fix, setFix] = useState({ agenda: '', decisions: '' })
   const [todos, setTodos] = useState<{ text: string; take: boolean }[]>([])
   const [recovered, setRecovered] = useState<Saved | null>(null)
+
+  /**
+   * 회의가 실제로 시작된 벽시계 시각.
+   *
+   * **손으로 안 적게 하려고 둔다.** 이미 시간을 재고 있는데 「몇 시에 시작했나」를
+   * 또 적으라고 하면 안 적는다. 처음 소리가 흐른 순간에 한 번만 찍고 안 바꾼다 —
+   * 중간에 멈췄다 다시 켜도 회의 시작은 처음 그 시각이다.
+   */
+  const startedAtRef = useRef<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
 
   const browser = useMemo(browserName, [])
@@ -200,12 +217,22 @@ export default function LiveMeeting() {
   )
   const recordOk = recorder.supported && live.secure
 
+  useEffect(() => {
+    if (!startedAtRef.current && live.elapsedMs > 0) startedAtRef.current = hhmm(new Date())
+  }, [live.elapsedMs])
+
   // ── 브라우저에 임시 저장 ────────────────────────────────
   // 회의 중에 탭이 닫히면 한 시간이 통째로 날아간다. 그래서 계속 적어 둔다.
   // (이 글은 이 컴퓨터의 브라우저에만 있다. 저장을 눌러야 서버로 간다)
   useEffect(() => {
     if (live.segments.length === 0) return
-    const payload: Saved = { meta, segments: live.segments, elapsedMs: live.elapsedMs, myNotes }
+    const payload: Saved = {
+      meta,
+      segments: live.segments,
+      elapsedMs: live.elapsedMs,
+      myNotes,
+      startedAt: startedAtRef.current ?? undefined,
+    }
     try {
       localStorage.setItem(DRAFT_KEY, JSON.stringify(payload))
     } catch {
@@ -268,6 +295,9 @@ export default function LiveMeeting() {
         transcript: text,
         myNotes,
         durationSec: Math.round(live.elapsedMs / 1000),
+        // 받아쓰기를 한 번도 안 켰으면(직접입력) 시각도 없다. 나중에 손으로 채운다
+        startedAt: startedAtRef.current,
+        endedAt: startedAtRef.current ? hhmm(new Date()) : null,
         aiDraft: draft ? { text: draft.text, minutes: draft.minutes, model: draft.model } : null,
         followUps: todos.filter((t) => t.take).map((t) => t.text),
         sensitive,
@@ -460,6 +490,8 @@ export default function LiveMeeting() {
                 onClick={() => {
                   setMeta(recovered.meta)
                   setMyNotes(recovered.myNotes ?? '')
+                  // 되살릴 때 시작 시각도 같이 — 안 그러면 이어 쓴 시각이 시작으로 잡힌다
+                  startedAtRef.current = recovered.startedAt ?? null
                   live.restore(recovered.segments, recovered.elapsedMs)
                   setRecovered(null)
                 }}

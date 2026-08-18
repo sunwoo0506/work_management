@@ -47,6 +47,44 @@ export function clock(ms: number): string {
 }
 
 /**
+ * 벽시계 시각을 「HH:MM」으로 — **회의 시작·종료 시각을 오갈 때 쓴다.**
+ *
+ * 세 곳의 표기가 서로 다르기 때문에 한 곳에서 맞춘다.
+ *   저장소  「14:00:00」 (초까지 온다)
+ *   입력칸  「14:00」    (초가 붙으면 브라우저가 안 받기도 한다)
+ *   Date    지금 시각을 찍을 때
+ *
+ * ⚠️ `clock()` 과 헷갈리지 않는다. 저건 **흐른 시간**(00:42 = 42초),
+ *    이건 **시각**(14:00 = 오후 2시)이다. 둘 다 콜론이 들어가 눈으로는 비슷하다.
+ *
+ * 알아볼 수 없는 값은 빈 문자열로 돌려준다 — 화면이 죽지 않게 한다.
+ */
+export function hhmm(v: string | Date | null | undefined): string {
+  if (!v) return ''
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) return ''
+    return `${pad(v.getHours())}:${pad(v.getMinutes())}`
+  }
+  const m = v.trim().match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return ''
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (h > 23 || min > 59) return ''
+  return `${pad(h)}:${pad(min)}`
+}
+
+/**
+ * 「14:00~15:30」처럼 묶어 준다. 한쪽만 있으면 그것만 낸다.
+ * 둘 다 없으면 빈 문자열 — 화면이 「~」만 덩그러니 그리지 않게 한다.
+ */
+export function timeRange(from: string | null | undefined, to: string | null | undefined): string {
+  const a = hhmm(from)
+  const b = hhmm(to)
+  if (a && b) return `${a}~${b}`
+  return a || b
+}
+
+/**
  * 확정된 말 한 토막을 붙인다.
  *
  * 받아쓰기는 숨 쉬는 자리마다 토막을 끊어 준다. 그대로 쌓으면 두세 글자짜리

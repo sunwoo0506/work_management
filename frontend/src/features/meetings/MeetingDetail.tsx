@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Row } from '../../lib/supabase'
 import { Field, PillButton, TextArea, TextInput } from '../../components/Field'
-import { clock, mergeIntoTranscript, usedGlossary } from '../../domain/transcript'
+import { clock, hhmm, mergeIntoTranscript, timeRange, usedGlossary } from '../../domain/transcript'
 import {
   EMPTY_MINUTES,
   mergeMinutes,
@@ -57,6 +57,10 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
     title: meeting.title,
     place: meeting.place ?? '',
     attendees: meeting.attendees ?? '',
+    writer: meeting.writer ?? '',
+    // 저장소는 「14:00:00」로 주는데 입력칸은 「14:00」을 받는다. 한 곳에서 맞춘다
+    started_at: hhmm(meeting.started_at),
+    ended_at: hhmm(meeting.ended_at),
   })
   const [confirmDrop, setConfirmDrop] = useState(false)
 
@@ -276,6 +280,30 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
               />
             </Field>
           </div>
+          <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_2fr] gap-3">
+            {/* 실시간 받아쓰기로 만든 회의는 이미 채워져 온다 — 손으로 적을 이유가 없다 */}
+            <Field label="시작 시각">
+              <TextInput
+                type="time"
+                value={head.started_at}
+                onChange={(e) => setHead((p) => ({ ...p, started_at: e.target.value }))}
+              />
+            </Field>
+            <Field label="종료 시각">
+              <TextInput
+                type="time"
+                value={head.ended_at}
+                onChange={(e) => setHead((p) => ({ ...p, ended_at: e.target.value }))}
+              />
+            </Field>
+            <Field label="작성자" hint="역할로 적습니다">
+              <TextInput
+                value={head.writer}
+                onChange={(e) => setHead((p) => ({ ...p, writer: e.target.value }))}
+                placeholder="예: 경영지원부장"
+              />
+            </Field>
+          </div>
           <div className="flex gap-2">
             <PillButton
               type="button"
@@ -292,9 +320,13 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
       ) : (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-caption text-ink-mute">
           <span>{sourceLabel(meeting.transcript_source)}</span>
+          {timeRange(meeting.started_at, meeting.ended_at) && (
+            <span>{timeRange(meeting.started_at, meeting.ended_at)}</span>
+          )}
           {meeting.duration_sec ? <span>{clock(meeting.duration_sec * 1000)}</span> : null}
           {meeting.place && <span>{meeting.place}</span>}
           {meeting.attendees && <span>{meeting.attendees}</span>}
+          {meeting.writer && <span>작성 {meeting.writer}</span>}
           {meeting.transcript && <span>{meeting.transcript.length.toLocaleString()}자</span>}
           <button
             type="button"
@@ -519,6 +551,11 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
               place: meeting.place,
               attendees: meeting.attendees,
               durationSec: meeting.duration_sec,
+              // ⚠️ 작성자는 인쇄 양식에 칸이 있는데도 **넘기지 않고 있었다**(2026-08-18).
+              //    칸을 만들고 값을 안 넘기면 화면에선 그냥 「없는 칸」으로 보인다
+              writer: meeting.writer,
+              startedAt: meeting.started_at,
+              endedAt: meeting.ended_at,
             })
             setNote(
               ok

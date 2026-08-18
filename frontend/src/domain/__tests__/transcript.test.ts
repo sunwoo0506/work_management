@@ -3,6 +3,7 @@ import {
   appendFinal,
   clock,
   editSegment,
+  hhmm,
   parseMinutes,
   toggleMark,
   transcriptStats,
@@ -10,6 +11,7 @@ import {
   usedGlossary,
   mergeIntoTranscript,
   tidyTranscript,
+  timeRange,
 } from '../transcript'
 import type { Segment } from '../transcript'
 
@@ -244,5 +246,57 @@ describe('tidyTranscript — 다른 데서 받아쓴 글 다듬기', () => {
 
   it('빈 글은 빈 글', () => {
     expect(tidyTranscript('   \n\n  ')).toBe('')
+  })
+})
+
+/*
+  2026-08-18 — 회의록 1번 기본정보의 「시작~종료 시각」을 붙이면서 만든 것.
+  저장소·입력칸·Date 가 표기가 달라서 한 곳에서 맞춘다.
+*/
+describe('hhmm — 벽시계 시각 표기를 한 곳에서 맞춘다', () => {
+  it('저장소에서 온 초까지 있는 값을 줄인다', () => {
+    expect(hhmm('14:00:00')).toBe('14:00')
+    expect(hhmm('09:05:30')).toBe('09:05')
+  })
+
+  it('입력칸에서 온 값은 그대로 통과한다', () => {
+    expect(hhmm('14:00')).toBe('14:00')
+  })
+
+  it('한 자리 시각도 두 자리로 맞춘다 — 「9:05」와 「09:05」가 갈리면 안 된다', () => {
+    expect(hhmm('9:05')).toBe('09:05')
+  })
+
+  it('Date 는 로컬 벽시계로 읽는다', () => {
+    expect(hhmm(new Date(2026, 7, 18, 14, 3))).toBe('14:03')
+    expect(hhmm(new Date(2026, 7, 18, 0, 0))).toBe('00:00')
+  })
+
+  it('없거나 알아볼 수 없으면 빈 문자열 — 화면이 죽지 않게', () => {
+    expect(hhmm(null)).toBe('')
+    expect(hhmm(undefined)).toBe('')
+    expect(hhmm('')).toBe('')
+    expect(hhmm('오후 2시')).toBe('')
+    expect(hhmm(new Date('말도 안 되는 값'))).toBe('')
+  })
+
+  it('시각으로 성립하지 않는 숫자는 안 받는다', () => {
+    expect(hhmm('25:00')).toBe('')
+    expect(hhmm('12:70')).toBe('')
+  })
+})
+
+describe('timeRange — 「14:00~15:30」', () => {
+  it('둘 다 있으면 물결로 잇는다', () => {
+    expect(timeRange('14:00:00', '15:30:00')).toBe('14:00~15:30')
+  })
+
+  it('한쪽만 있으면 그것만 낸다 — 「~」만 덩그러니 두지 않는다', () => {
+    expect(timeRange('14:00', null)).toBe('14:00')
+    expect(timeRange(null, '15:30')).toBe('15:30')
+  })
+
+  it('둘 다 없으면 빈 문자열', () => {
+    expect(timeRange(null, undefined)).toBe('')
   })
 })
