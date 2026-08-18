@@ -217,3 +217,77 @@ describe('mergeMinutes — 구간별 회의록 합치기', () => {
     expect(mergeMinutes([])).toEqual(EMPTY_MINUTES)
   })
 })
+
+/*
+  2026-08-18 — AI 를 실제로 한 번 돌려 보고 나서 붙인 시험들.
+  글로만 확인했으면 못 봤을 것들이다.
+*/
+describe('AI 가 줄 끝에 붙인 근거 표기 — 칸을 오염시키지 않는다', () => {
+  it('분류 칸의 근거 표기를 떼어 낸다', () => {
+    const m = parseMinutesDoc(
+      '[결정]\n- 원가 단위를 킬로그램으로 통일 | 거래처 기준 | 원가·단위 ([받아쓴 글 00:20~00:52])',
+    )
+    expect(m.decisions[0].area).toBe('원가·단위')
+  })
+
+  it('근거가 여럿 적힌 것도 떼어 낸다', () => {
+    const m = parseMinutesDoc(
+      '[논의]\n- 타이벡 단가 | 인상됨 | 추가 확인 | 품목·가격 ([사내 용어집], [받아쓴 글 01:36~02:22])',
+    )
+    expect(m.discussions[0].area).toBe('품목·가격')
+  })
+
+  it('기한 칸에 붙은 근거도 뗀다 — 여기가 더러우면 기한을 못 읽는다', () => {
+    const m = parseMinutesDoc('[할 일]\n- 견적 받기 | 담당자 | 다음 주 수요일 ([받아쓴 글 02:15])')
+    expect(m.actions[0].due).toBe('다음 주 수요일')
+  })
+
+  it('자유 서술 칸에서도 뗀다', () => {
+    const m = parseMinutesDoc('[미결]\n- 기존 데이터 처리 방법 ([받아쓴 글 01:03~01:24])')
+    expect(m.pending[0]).toBe('기존 데이터 처리 방법')
+  })
+
+  it('★ 내용인 괄호는 건드리지 않는다 — 「(수요일까지)」는 사람이 한 말이다', () => {
+    const m = parseMinutesDoc('[할 일]\n- 대체 거래처 견적 (3곳) | 담당자 | 수요일')
+    expect(m.actions[0].text).toBe('대체 거래처 견적 (3곳)')
+    expect(m.actions[0].due).toBe('수요일')
+  })
+
+  it('근거 표기가 없으면 그대로 둔다', () => {
+    const m = parseMinutesDoc('[결정]\n- 킬로그램으로 통일 | 거래처 기준 | 원가·단위')
+    expect(m.decisions[0].area).toBe('원가·단위')
+  })
+})
+
+describe('분류 거르기 — 목록에 없으면 비운다', () => {
+  const AREAS = ['원가·단위', '품목·가격', '회생지원']
+
+  it('목록 안의 값은 그대로 받는다', () => {
+    const m = parseMinutesDoc('[결정]\n- 통일 | 근거 | 원가·단위', AREAS)
+    expect(m.decisions[0].area).toBe('원가·단위')
+  })
+
+  it('★ 지어낸 분류는 비운다 — 틀리게 채우는 것보다 비는 게 낫다', () => {
+    const m = parseMinutesDoc('[결정]\n- 정수기 연장 | | 총무·시설', AREAS)
+    expect(m.decisions[0].area).toBe('')
+  })
+
+  it('근거를 뗀 뒤에 거른다 — 표기가 붙었다고 멀쩡한 분류를 버리지 않는다', () => {
+    const m = parseMinutesDoc('[할 일]\n- 견적 | 담당 | 수요일 | 품목·가격 ([받아쓴 글 02:15])', AREAS)
+    expect(m.actions[0].area).toBe('품목·가격')
+  })
+
+  it('목록을 안 넘기면 거르지 않는다 — 설정이 비었을 때 값을 잃지 않는다', () => {
+    const m = parseMinutesDoc('[결정]\n- 통일 | | 아무거나')
+    expect(m.decisions[0].area).toBe('아무거나')
+    expect(parseMinutesDoc('[결정]\n- 통일 | | 아무거나', []).decisions[0].area).toBe('아무거나')
+  })
+
+  it('논의·결정·할 일 세 칸 모두 걸러진다', () => {
+    const m = parseMinutesDoc(
+      '[논의]\n- 가 | 나 | 다 | 없는영역\n[결정]\n- 라 | 마 | 없는영역\n[할 일]\n- 바 | 사 | 아 | 없는영역',
+      AREAS,
+    )
+    expect([m.discussions[0].area, m.decisions[0].area, m.actions[0].area]).toEqual(['', '', ''])
+  })
+})

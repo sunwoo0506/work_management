@@ -149,7 +149,9 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
           parts: chunks.length,
         })
         texts.push(reply.text)
-        docs.push(parseMinutesDoc(reply.text))
+        // 등록된 영역 목록을 함께 넘긴다 — 목록 밖의 분류는 여기서 비워진다.
+        // AI 에게 「목록에서만 고르라」고도 하지만 규칙은 안 지켜질 수 있다
+        docs.push(parseMinutesDoc(reply.text, areas))
       }
       setPart(null)
       return { doc: mergeMinutes(docs), text: texts.join('\n\n---\n\n') }

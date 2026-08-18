@@ -109,12 +109,56 @@ function cells(line: string, want: number): string[] {
 }
 
 /**
+ * AI 가 줄 끝에 붙인 **근거 표기**를 떼어 낸다.
+ *
+ * ── 왜 필요한가 ──────────────────────────────────────────
+ * AI 에게는 「근거를 밝혀라」가 기본 규칙이다. 질문에 답할 때는 그게 맞다 —
+ * 어느 자료를 보고 한 말인지 없으면 사용자가 믿을 수 없다.
+ *
+ * 그런데 **회의록에서는 근거가 하나뿐이다.** 받아쓴 글. 줄마다 다시 적을 이유가
+ * 없는데도 적어서, `분류` 칸이 「원가·단위 ([받아쓴 글 00:20~00:52])」가 됐다.
+ * 그 값이 그대로 인박스를 거쳐 **업무의 영역**이 된다. 리포트가 그걸로 집계한다.
+ *
+ * 규칙으로도 막지만(프롬프트) **여기서 한 번 더 막는다.** 규칙은 안 지켜질 수 있고,
+ * 모델을 갈아끼우면 또 달라진다. 계산으로 되는 것은 계산이 막는다.
+ *
+ * 아무 괄호나 떼면 안 된다 — 「견적 받기 (수요일까지)」의 괄호는 내용이다.
+ * **근거처럼 생긴 것만** 뗀다.
+ */
+function dropCitation(cell: string): string {
+  return cell
+    .replace(/\s*[(（]\s*\[[^)）]*[)）]\s*$/, '')
+    .replace(/\s*[(（][^)）]*(?:받아쓴\s*글|전사문|사내\s*용어집)[^)）]*[)）]\s*$/, '')
+    .trim()
+}
+
+/**
+ * 분류 칸을 거른다 — **등록된 영역이 아니면 비운다.**
+ *
+ * AI 가 목록 밖의 말을 지어내면 리포트 집계가 그만큼 조각난다.
+ * 「비워 두는 것이 틀리게 채우는 것보다 낫다」 — 빈 칸은 눈에 띄지만
+ * 잘못 채운 칸은 틀린 줄 모르고 지나간다 (2026-08-17 결정).
+ *
+ * `areas` 를 안 넘기면 거르지 않는다. 설정이 비어 있으면 애초에 분류를
+ * 요구하지 않으므로, 그때는 AI 가 낸 값을 그대로 두는 편이 잃는 게 없다.
+ */
+function pickArea(cell: string, areas?: readonly string[]): string {
+  const v = dropCitation(cell)
+  if (!v) return ''
+  if (!areas || areas.length === 0) return v
+  return areas.some((a) => a.trim() === v) ? v : ''
+}
+
+/**
  * AI 가 준 글을 회의록 양식으로 나눈다.
  *
  * 형식이 어긋나도 죽지 않는다. 못 알아들은 칸은 비워 두고, 화면이 원문을 함께 보여 준다 —
  * **형식이 틀렸다고 사람이 말한 것을 잃으면 안 된다.**
+ *
+ * @param areas 「기준 › 설정 › 업무영역」 목록. 넘기면 **그 안의 값만** 분류로 받는다.
+ *              AI 가 지어낸 분류를 여기서 걸러 낸다 — 프롬프트만 믿지 않는다.
  */
-export function parseMinutesDoc(text: string): MinutesDoc {
+export function parseMinutesDoc(text: string, areas?: readonly string[]): MinutesDoc {
   const out: MinutesDoc = {
     purpose: [],
     agenda: [],
@@ -142,10 +186,10 @@ export function parseMinutesDoc(text: string): MinutesDoc {
 
     switch (current) {
       case 'purpose':
-        out.purpose.push(line.slice(0, 300))
+        out.purpose.push(dropCitation(line).slice(0, 300))
         break
       case 'agenda':
-        out.agenda.push(line.slice(0, 200))
+        out.agenda.push(dropCitation(line).slice(0, 200))
         break
       /*
         분류는 **맨 뒤 칸**에 온다. 가운데 끼워 넣지 않는 이유 —
@@ -154,31 +198,43 @@ export function parseMinutesDoc(text: string): MinutesDoc {
       */
       case 'discussions': {
         const [topic, points, result, area] = cells(line, 4)
-        out.discussions.push({ topic, points, result, area })
+        out.discussions.push({
+          topic,
+          points,
+          result: dropCitation(result),
+          area: pickArea(area, areas),
+        })
         break
       }
       case 'decisions': {
         const [t, note, area] = cells(line, 3)
-        out.decisions.push({ text: t, note, area })
+        out.decisions.push({ text: t, note: dropCitation(note), area: pickArea(area, areas) })
         break
       }
       case 'actions': {
         const [t, owner, due, area] = cells(line, 4)
-        out.actions.push({ text: t, owner, due, status: '예정', area })
+        out.actions.push({
+          text: t,
+          owner,
+          // 기한 칸에도 근거가 붙는다. 여기 쓰레기가 들어가면 기한이 안 읽힌다
+          due: dropCitation(due),
+          status: '예정',
+          area: pickArea(area, areas),
+        })
         break
       }
       case 'pending':
-        out.pending.push(line.slice(0, 300))
+        out.pending.push(dropCitation(line).slice(0, 300))
         break
       case 'next': {
-        const [date, agenda] = cells(line, 2)
+        const [date, agenda] = cells(line, 2).map(dropCitation)
         // 「예정일 | 안건」 한 줄만 받는다. 여러 줄이면 뒤엣것을 안건에 잇는다
         if (!out.next.date) out.next = { date, agenda }
         else out.next.agenda = [out.next.agenda, line].filter(Boolean).join(' / ')
         break
       }
       case 'checks':
-        out.checks.push(line.slice(0, 300))
+        out.checks.push(dropCitation(line).slice(0, 300))
         break
     }
   }

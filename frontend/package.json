@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run check:keys",
+    "build": "tsc -b && vite build && npm run check:keys && npm run check:functions",
     "check:keys": "node scripts/check-no-keys.mjs",
+    "check:functions": "node scripts/check-functions.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
