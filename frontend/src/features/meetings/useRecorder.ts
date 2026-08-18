@@ -50,6 +50,25 @@ const CHUNK_MS = 15_000
  */
 const FIRST_CHUNK_MS = 6_000
 
+/**
+ * 이 소리보다 조용한 토막은 **보내지 않는다.**
+ *
+ * ── 왜 ───────────────────────────────────────────────────
+ * 받아쓰기 모델은 유튜브 자막을 보고 배웠다. **소리가 없는 토막**을 받으면
+ * 빈 답을 내는 대신 자막에서 흔한 문장을 지어낸다 —
+ * 「시청해주셔서 감사합니다」가 회의록에 들어온 이유다(2026-08-19).
+ *
+ * 토막을 15초로 줄이면서 **말 없는 토막이 늘었고 그만큼 자주 나왔다.**
+ * 지어낸 글을 나중에 거르는 것보다 **애초에 안 보내는 쪽이 확실하다.**
+ * 요금도 그만큼 안 나간다.
+ *
+ * ── 값을 왜 이렇게 낮게 잡았나 ───────────────────────────
+ * 잘못 버리면 **사람이 한 말이 사라진다.** 회의실은 넓고 말하는 사람이
+ * 멀리 있을 수 있다. 그래서 **확실히 조용할 때만** 버리도록 낮게 잡았다.
+ * 이 그물을 빠져나온 것은 글에서 한 번 더 거른다(domain/hallucination.ts).
+ */
+const SILENCE_PEAK = 0.05
+
 export type RecorderStatus = '준비' | '녹음중' | '멈춤'
 
 /**
@@ -83,6 +102,8 @@ export function useRecorder(
    * 마이크가 산 것만 알려 준다. 얼마나 더 기다리면 되는지는 말해 주지 않는다.
    */
   const [nextInSec, setNextInSec] = useState(0)
+  /** 조용해서 안 보낸 토막 수. 「왜 글이 안 늘지?」의 답이 되어야 한다 */
+  const [skippedQuiet, setSkippedQuiet] = useState(0)
 
   const streamRef = useRef<MediaStream | null>(null)
   const recRef = useRef<MediaRecorder | null>(null)
@@ -96,6 +117,8 @@ export function useRecorder(
   const firstRef = useRef(true)
   /** 지금 토막이 끝날 벽시계 시각. 남은 초를 세는 데 쓴다 */
   const endsAtRef = useRef(0)
+  /** 지금 토막에서 가장 컸던 소리 (0~1) */
+  const chunkPeakRef = useRef(0)
   const elapsedRef = useRef<() => number>(() => 0)
 
   const supported =
@@ -137,7 +160,10 @@ export function useRecorder(
         analyser.getByteTimeDomainData(buf)
         let peak = 0
         for (const v of buf) peak = Math.max(peak, Math.abs(v - 128))
-        setLevel(Math.min(1, peak / 60))
+        const lv = Math.min(1, peak / 60)
+        setLevel(lv)
+        // 이 토막에서 가장 컸던 소리. 「말이 있었나」를 판단하는 근거다
+        if (lv > chunkPeakRef.current) chunkPeakRef.current = lv
         rafRef.current = requestAnimationFrame(tick)
       }
       tick()
@@ -156,16 +182,22 @@ export function useRecorder(
     const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
     const parts: Blob[] = []
     chunkAtRef.current = elapsedRef.current()
+    chunkPeakRef.current = 0
 
     rec.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) parts.push(e.data)
     }
     rec.onstop = () => {
       const at = chunkAtRef.current
+      const loudest = chunkPeakRef.current
       if (parts.length > 0) {
         const blob = new Blob(parts, { type: parts[0].type || mime || 'audio/webm' })
         // 너무 짧은 토막(1초 미만)은 보내지 않는다 — 요금만 나가고 글은 안 나온다
-        if (blob.size > 4_000) onChunkRef.current(blob, at)
+        const 들을만한가 = blob.size > 4_000
+        // 아무 말도 없던 토막은 보내지 않는다 — 보내면 없는 말을 지어낸다
+        const 소리가있었나 = chunkMs === 0 || loudest >= SILENCE_PEAK
+        if (들을만한가 && 소리가있었나) onChunkRef.current(blob, at)
+        else if (들을만한가) setSkippedQuiet((n) => n + 1)
       }
       // 사람이 멈춘 게 아니면 곧바로 다음 토막을 시작한다
       if (wantRef.current) spin()
@@ -212,6 +244,7 @@ export function useRecorder(
         wantRef.current = true
         // 멈췄다 다시 시작해도 첫 토막은 짧게 — 그때도 「되나?」가 다시 궁금해진다
         firstRef.current = true
+        setSkippedQuiet(0)
         watchLevel(stream)
         spin()
         setStatus('녹음중')
@@ -288,6 +321,8 @@ export function useRecorder(
     nextInSec,
     /** 토막 길이(초). 화면이 「몇 초마다 올라온다」를 안내할 때 쓴다 */
     chunkSec: Math.round(chunkMs / 1000),
+    /** 조용해서 안 보낸 토막 수 */
+    skippedQuiet,
     error,
     start,
     stop,
