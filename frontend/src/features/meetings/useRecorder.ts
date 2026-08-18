@@ -82,6 +82,17 @@ export type RecorderStatus = '준비' | '녹음중' | '멈춤'
 export function useRecorder(
   onChunk: (blob: Blob, atMs: number) => void,
   chunkMs: number = CHUNK_MS,
+  /**
+   * 소리 크기를 잴 것인가.
+   *
+   * **끄면 화면이 훨씬 덜 그려진다.** 재는 일은 초당 60번 돌면서 그때마다
+   * 화면을 다시 그리게 만든다. 안전망 녹음기처럼 **막대를 안 보여 주고
+   * 무음도 안 가리는** 자리에서는 순전히 낭비다.
+   *
+   * 실제로 2026-08-19 에 녹음 길에도 안전망 녹음기를 붙이면서, 녹음기 두 대가
+   * 각각 재기 시작해 **화면이 두 배로 그려질 뻔했다.**
+   */
+  meter: boolean = true,
 ) {
   /*
     넘겨받은 함수를 그릇(ref)에 담아 둔다.
@@ -182,7 +193,7 @@ export function useRecorder(
     const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
     const parts: Blob[] = []
     chunkAtRef.current = elapsedRef.current()
-    chunkPeakRef.current = 0
+    chunkPeakRef.current = meter ? 0 : 1
 
     rec.ondataavailable = (e) => {
       if (e.data && e.data.size > 0) parts.push(e.data)
@@ -221,7 +232,7 @@ export function useRecorder(
         }
       }, len)
     }
-  }, [pickMime, chunkMs])
+  }, [pickMime, chunkMs, meter])
 
   const start = useCallback(
     async (elapsed: () => number) => {
@@ -242,10 +253,12 @@ export function useRecorder(
         })
         streamRef.current = stream
         wantRef.current = true
+        // 안 재는 자리에서는 「소리가 있었다」로 둔다 — 안 그러면 전부 조용한 것으로 보고 안 보낸다
+        if (!meter) chunkPeakRef.current = 1
         // 멈췄다 다시 시작해도 첫 토막은 짧게 — 그때도 「되나?」가 다시 궁금해진다
         firstRef.current = true
         setSkippedQuiet(0)
-        watchLevel(stream)
+        if (meter) watchLevel(stream)
         spin()
         setStatus('녹음중')
         return true
@@ -261,7 +274,7 @@ export function useRecorder(
         return false
       }
     },
-    [supported, watchLevel, spin],
+    [supported, watchLevel, spin, meter],
   )
 
   /** 멈춘다. 녹음 중이던 토막도 끝내서 넘긴다 (그 부분이 사라지지 않게) */

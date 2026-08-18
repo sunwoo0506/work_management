@@ -220,6 +220,9 @@ export default function LiveMeeting() {
   const safety = useRecorder(
     useCallback((blob: Blob) => setAudio(blob), []),
     0,
+    // 소리 크기는 안 잰다 — 막대를 안 보여 주고 무음도 안 가리는 자리다.
+    // 재면 녹음기 두 대가 각각 초당 60번씩 화면을 다시 그리게 한다
+    false,
   )
   const recordOk = recorder.supported && live.secure
 
@@ -431,8 +434,18 @@ export default function LiveMeeting() {
     )
   }
 
-  /** 저장할 때 소리를 올릴 것인가 (사람이 안 정했으면 툴이 정한다) */
-  const willUploadAudio = uploadAudio ?? live.segments.length === 0
+  /**
+   * 저장할 때 소리를 서버에 올릴 것인가.
+   *
+   * **기본값이 「보관」이다** (2026-08-19 에 바꿈). 전에는 「받아쓰기가 하나도
+   * 안 됐을 때만」이었는데, 그러면 **받아쓰기가 엉망으로 나온 경우가 빠진다** —
+   * 글자는 나왔으니 툴은 성공으로 보지만 사람이 보면 못 쓸 글이다.
+   * 그때 소리마저 없으면 **회의가 통째로 사라진다.** 실제로 그랬다.
+   *
+   * 소리는 나중에 지울 수 있지만 **안 담은 소리는 되살릴 수 없다.**
+   * 되돌릴 수 있는 쪽을 기본값으로 둔다.
+   */
+  const willUploadAudio = uploadAudio ?? true
 
   const listening = live.status === '듣는중'
   const paused = live.status === '멈춤'
@@ -450,9 +463,20 @@ export default function LiveMeeting() {
       if (!ok) live.pause()
     } else {
       live.start()
-      // 받아쓰기가 글자를 못 내놔도 말이 사라지지 않게, 소리를 따로 담아 둔다
-      if (keepAudio) await safety.start(live.elapsedNow)
     }
+    /*
+      소리를 **통째로** 따로 담는다. 두 길 모두에서 돈다.
+
+      ── 왜 녹음 길에도 필요한가 (2026-08-19 에 빠져 있던 것) ──
+      녹음 길은 소리를 15초씩 잘라 서버로 보내고 **그 조각을 버린다.**
+      그래서 회의가 끝나면 **소리가 하나도 안 남았다.** 받아쓰기가 엉망으로
+      나와도 다시 돌려볼 원본이 없다 — 실제로 그 상황이 났다.
+
+      ⚠️ 조각을 이어 붙여 쓸 수는 없다. 녹음 형식은 맨 앞에 머리말이 있어야
+         열리는데 조각마다 제 머리말을 갖고 있어서, 붙이면 **못 여는 파일**이 된다.
+         그래서 **끊지 않는 녹음기를 하나 더** 돌린다.
+    */
+    if (keepAudio) await safety.start(live.elapsedNow)
   }
   async function again() {
     if (recording) {
@@ -461,8 +485,8 @@ export default function LiveMeeting() {
       if (!ok) live.pause()
     } else {
       live.resume()
-      if (keepAudio) await safety.start(live.elapsedNow)
     }
+    if (keepAudio) await safety.start(live.elapsedNow)
   }
   function hold() {
     recorder.stop()
@@ -577,12 +601,17 @@ export default function LiveMeeting() {
               )}
 
               {/*
-                ⚠️ 받아쓰기가 글자를 못 내놓으면 **그동안 한 말이 통째로 사라진다.**
-                소리는 어디에도 저장되지 않고 흘러가기 때문이다. 그래서 소리를 따로 담아 둔다.
-                이 소리는 이 브라우저 안에만 있고 서버로 안 간다 — 요금 0원.
+                ⚠️ 소리를 안 담아 두면 **한 말이 통째로 사라진다.**
+
+                받아쓰기 길(⚡)은 글자를 못 내놓을 때 그렇고,
+                녹음 길(🎧)은 조각을 서버에 보내고 **버리기 때문에** 그렇다.
+                녹음 길에는 이 스위치가 아예 없어서 소리가 하나도 안 남았다(2026-08-19).
+                **두 길 모두에 둔다.**
+
+                담아 두는 동안은 이 브라우저 안에만 있다 — 요금 0원.
+                서버로 올릴지는 저장할 때 따로 고른다.
               */}
-              {!recording && (
-                <label className="flex items-start gap-2 text-caption mt-2">
+              <label className="flex items-start gap-2 text-caption mt-2">
                   <input
                     type="checkbox"
                     checked={keepAudio}
@@ -592,13 +621,13 @@ export default function LiveMeeting() {
                   <span className="text-ink-soft">
                     음성 파일 함께 보관 <span className="text-ink-mute">(안전장치)</span>
                     <span className="block text-ink-mute leading-relaxed mt-0.5">
-                      받아쓰기가 실패하더라도 <strong className="font-semibold">회의 내용이 유실되지
-                      않습니다.</strong> 종료 후 음성 파일을 내려받을 수 있으며, 이 음성은 외부로
-                      전송되지 않고 비용도 발생하지 않습니다.
+                      받아쓰기가 실패하거나 <strong className="font-semibold">엉뚱하게 나와도
+                      회의 내용이 유실되지 않습니다.</strong> 종료 후 음성 파일을 내려받거나
+                      다시 변환할 수 있습니다. 담아 두는 동안은 이 브라우저 안에만 있어
+                      비용이 발생하지 않습니다.
                     </span>
                   </span>
                 </label>
-              )}
             </div>
           )}
 
@@ -957,10 +986,12 @@ export default function LiveMeeting() {
                   />
                   <span className="text-ink-soft">
                     <strong className="font-semibold">「회의록 저장」 시 이 음성도 함께 보관</strong>
+                    <span className="text-ink-mute"> — 기본값입니다</span>
                     <span className="block text-ink-mute leading-relaxed mt-0.5">
                       서버에 올라갑니다. 이 경우 <strong className="font-semibold">다른 기기에서도</strong>{' '}
-                      해당 회의록을 열어 다시 변환할 수 있습니다. 문자 변환이 완료되면 음성은 자동으로
-                      삭제됩니다.
+                      해당 회의록을 열어 다시 변환할 수 있습니다.{' '}
+                      <strong className="font-semibold">받아쓴 글이 엉뚱할 때 되돌릴 수 있는 유일한
+                      길입니다.</strong> 나중에 「지난 회의록」에서 언제든 지울 수 있습니다.
                     </span>
                   </span>
                 </label>
@@ -969,7 +1000,7 @@ export default function LiveMeeting() {
                   ⚠️ 아직 <strong className="font-semibold">이 브라우저 안에만</strong> 있습니다.{' '}
                   {willUploadAudio
                     ? '「회의록 저장」을 누르면 서버에 보관됩니다. 저장하지 않고 이 화면을 벗어나면 삭제됩니다.'
-                    : '위 항목을 선택하지 않으면 저장해도 음성은 보관되지 않습니다.'}
+                    : '위 항목을 끄면 저장해도 음성은 남지 않습니다. 받아쓴 글이 엉뚱해도 되돌릴 방법이 없습니다.'}
                 </p>
               </>
             )}
