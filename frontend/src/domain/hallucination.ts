@@ -33,6 +33,10 @@ function normalize(text: string): string {
  *
  * 유튜브 자막에 수없이 나오는 문장들이다. **회의록에 이 말만 있는 토막은 없다.**
  * 새로 발견되면 여기 한 줄 더한다 — 고칠 자리를 한 곳으로 모아 뒀다.
+ *
+ * ⚠️ **이 목록만으로는 부족하다.** 「독도는 범죄로 지치고 바나나도 의지」처럼
+ *    처음 보는 헛소리는 여기 없다. 그건 `keepSpoken()` 이 숫자로 잡는다.
+ *    이 목록은 그 그물을 빠져나온 것을 거르는 **마지막 체**다.
  */
 const KNOWN = [
   '시청해주셔서감사합니다',
@@ -46,6 +50,10 @@ const KNOWN = [
   '구독과좋아요알림설정까지부탁드립니다',
   '다음영상에서만나요',
   '다음시간에만나요',
+  '오늘영상은여기까지입니다',
+  '오늘영상은여기까지입니다감사합니다',
+  '영상은여기까지입니다',
+  '이만마치겠습니다',
   '감사합니다',
   '고맙습니다',
   '수고하셨습니다',
@@ -99,4 +107,67 @@ function isRepeated(text: string): boolean {
  */
 export function dropHallucination(text: string): string {
   return isHallucination(text) ? '' : text.trim()
+}
+
+
+/**
+ * 받아쓰기가 토막마다 붙여 주는 「이게 정말 말이었나」 숫자.
+ *
+ * 이름을 우리 식으로 바꿔 받는다 — 공급자를 갈아끼워도 이 파일이 안 바뀌게.
+ */
+export type SpeechSegment = {
+  text: string
+  /** 이게 말이 아닐 확률 (0~1). 높으면 지어낸 것 */
+  noSpeechProb: number | null
+  /** 얼마나 확신하는가 (음수, 0 에 가까울수록 확신) */
+  avgLogprob: number | null
+  /** 같은 말을 되풀이하면 커진다 */
+  compressionRatio: number | null
+}
+
+/**
+ * ── 왜 이 값들인가 (2026-08-19 에 직접 재서 정했다) ──────
+ *
+ * | | 말없음확률 | 확신도 |
+ * |---|---|---|
+ * | 무음 (지어낸 말) | **0.802** | -0.679 |
+ * | 사람 말          | **0.008** | -0.267 |
+ *
+ * 말없음확률은 **100배** 갈라진다. 그래서 이게 주된 잣대다.
+ * 확신도는 덜 갈라지므로 **아주 낮을 때만** 쓴다 — 어중간하게 쓰면 사람 말이 날아간다.
+ */
+const 말없음_한계 = 0.6
+const 확신도_바닥 = -1.0
+/** 같은 말을 계속 뱉으면 이 값이 커진다. 받아쓰기 쪽에서 흔히 쓰는 기준이 2.4 다 */
+const 되풀이_한계 = 2.4
+
+/**
+ * 말이 아닌 토막을 걸러내고 남은 글만 잇는다.
+ *
+ * ── 왜 숫자로 거르나 ─────────────────────────────────────
+ * 낱말 목록(`KNOWN`)은 **본 것만** 잡는다. 실제 회의록에
+ * 「독도는 범죄로 지치고 바나나도 의지」 같은 게 들어왔는데, 이런 건 목록에 없다.
+ * 받아쓰기가 **스스로 알려주는 확신도**를 보면 처음 보는 헛소리도 잡힌다.
+ *
+ * ── 무엇을 조심했나 ──────────────────────────────────────
+ * 잘못 버리면 **사람이 한 말이 아무도 모르게 사라진다.**
+ * 그래서 ① 숫자가 없으면(못 받았으면) **버리지 않고 남기고**
+ * ② 확신도는 **바닥일 때만** 본다.
+ *
+ * `segments` 가 아예 없으면 `whole` 을 그대로 쓴다 — 옛 판 서버와도 돌아간다.
+ */
+export function keepSpoken(whole: string, segments?: SpeechSegment[] | null): string {
+  if (!segments || segments.length === 0) return dropHallucination(whole)
+
+  const kept = segments
+    .filter((s) => {
+      if (s.noSpeechProb !== null && s.noSpeechProb >= 말없음_한계) return false
+      if (s.avgLogprob !== null && s.avgLogprob <= 확신도_바닥) return false
+      if (s.compressionRatio !== null && s.compressionRatio >= 되풀이_한계) return false
+      return true
+    })
+    .map((s) => s.text.trim())
+    .filter(Boolean)
+
+  return dropHallucination(kept.join(' '))
 }

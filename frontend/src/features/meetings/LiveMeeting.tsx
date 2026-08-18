@@ -15,7 +15,6 @@ import {
 } from '../../domain/transcript'
 import type { Minutes, Segment } from '../../domain/transcript'
 import { parseMinutesDoc } from '../../domain/minutes'
-import { dropHallucination } from '../../domain/hallucination'
 import { useCompanyId } from '../companies/useCompany'
 import { useRegisteredAreas } from '../areas/useAreaOptions'
 import { useLiveTranscript } from './useLiveTranscript'
@@ -197,18 +196,9 @@ export default function LiveMeeting() {
       setPending((n) => n + 1)
       setRecNote(null)
       try {
-        const raw = await transcribeChunk(blob, termHint)
-        /*
-          받아쓰기가 **지어낸 말**을 여기서 턴다.
-
-          말이 없는 토막은 녹음기가 이미 안 보낸다. 그래도 「작게 웅성거리는」
-          토막은 통과하는데, 그런 걸 받으면 모델이 유튜브 자막에서 흔한 말을
-          지어낸다 — 「시청해주셔서 감사합니다」가 회의록에 들어왔다(2026-08-19).
-
-          ⚠️ **토막 하나 단위로** 부르는 것이 중요하다. 회의 전체 글에 걸면
-          가운데 있는 진짜 「감사합니다」까지 지워진다.
-        */
-        const got = dropHallucination(raw)
+        // 지어낸 말은 transcribeChunk 안에서 이미 걸러 나온다 —
+        // 거르는 자리를 여기 두면 다른 세 길이 또 새어 나간다 (2026-08-19)
+        const got = await transcribeChunk(blob, termHint)
         if (got) setSegments((prev) => appendFinal(prev, got, atMs))
       } catch (e) {
         // 토막 하나가 실패해도 회의는 계속돼야 한다. 알리기만 하고 넘어간다.

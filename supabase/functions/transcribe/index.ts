@@ -87,7 +87,19 @@ Deno.serve(async (req) => {
     out.append('file', file, fileName(file))
     out.append('model', Deno.env.get('AI_MODEL_TRANSCRIBE') || DEFAULT_TRANSCRIBE_MODEL)
     out.append('language', 'ko')
-    out.append('response_format', 'json')
+    /*
+      ⚠️ **verbose_json 으로 받는다.** 그냥 json 은 글만 오는데,
+      이건 **토막마다 「이게 정말 말이었나」를 숫자로** 같이 준다.
+
+      재 봤더니 갈라지는 정도가 압도적이다 (2026-08-19) —
+        무음(지어낸 말)  말없음확률 0.802
+        사람 말          말없음확률 0.008
+      100배 차이다. **낱말 목록과 달리 처음 보는 헛소리도 이걸로 잡힌다.**
+
+      판단은 여기서 하지 않고 **화면 쪽 순수 계산에 맡긴다**(domain/hallucination.ts).
+      여기는 Deno 로 돌아 시험을 못 붙이는 자리다 — 판단이 들어가면 아무도 못 고친다.
+    */
+    out.append('response_format', 'verbose_json')
     /*
       ⚠️ 「지어내기」를 최대한 줄인다 (2026-08-19).
 
@@ -124,12 +136,35 @@ Deno.serve(async (req) => {
     }
 
     const body = await res.json()
-    return json({ text: String(body?.text ?? '').trim() })
+
+    /*
+      토막마다의 확신도를 **그대로 넘긴다.** 무엇을 버릴지는 화면이 정한다.
+      이름을 우리 식으로 바꿔서 넘기는 이유 — 공급자를 갈아끼워도
+      화면이 안 바뀌게 하기 위해서다 (CLAUDE.md, 어댑터 한 겹).
+    */
+    const segments = Array.isArray(body?.segments)
+      ? body.segments.map((s: any) => ({
+          text: String(s?.text ?? ''),
+          /** 이게 말이 아닐 확률 (0~1). 높으면 지어낸 것이다 */
+          noSpeechProb: num(s?.no_speech_prob),
+          /** 얼마나 확신하는가 (음수, 0 에 가까울수록 확신). 아주 낮으면 헛소리다 */
+          avgLogprob: num(s?.avg_logprob),
+          /** 같은 말을 되풀이하면 커진다 */
+          compressionRatio: num(s?.compression_ratio),
+        }))
+      : []
+
+    return json({ text: String(body?.text ?? '').trim(), segments })
   } catch (e) {
     console.error(e)
     return json({ error: e instanceof Error ? e.message : String(e) }, 500)
   }
 })
+
+/** 숫자가 아니면 null 로 — 없는 값을 0 으로 두면 「확신한다」로 잘못 읽힌다 */
+function num(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
+}
 
 /**
  * 파일 이름을 만들어 붙인다.

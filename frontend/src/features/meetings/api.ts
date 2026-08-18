@@ -5,6 +5,7 @@ import { readFunctionError } from '../assistant/api'
 import type { Source } from '../assistant/api'
 import type { GlossaryPair, Minutes } from '../../domain/transcript'
 import type { MinutesDoc } from '../../domain/minutes'
+import { keepSpoken } from '../../domain/hallucination'
 
 /**
  * 실시간 회의록이 밖과 주고받는 것.
@@ -60,6 +61,14 @@ export async function callMinutes(payload: {
  * 브라우저가 아니라 **서버가 받아쓴다.** 브라우저는 녹음만 하므로
  * 폰·태블릿을 가리지 않는다 (브라우저 내장 받아쓰기는 폰에서 잘 안 됐다).
  *
+ * ── ★ 지어낸 말은 여기서 걸러 나간다 ─────────────────────
+ * **거르는 자리를 이 함수 하나로 모았다.** 2026-08-19 에 걸러 내는 코드를
+ * 만들고 **네 군데 중 한 군데에만** 붙였다가 나머지 세 길로 그대로 새어 나왔다 —
+ * 실패한 토막 다시 보내기 · 녹음 파일 올리기 · 지난 회의록 다시 받아쓰기.
+ *
+ * 부르는 쪽마다 붙이면 **언젠가 한 곳을 빠뜨린다.** 실제로 그랬다.
+ * 이제 받아쓰기를 부르는 길은 이 함수뿐이므로 **빠뜨릴 자리가 없다.**
+ *
  * @param hint 이 회의에 나올 사내 용어. 미리 알려 주면 그 표기로 적힌다
  */
 export async function transcribeChunk(blob: Blob, hint?: string): Promise<string> {
@@ -74,7 +83,11 @@ export async function transcribeChunk(blob: Blob, hint?: string): Promise<string
 
     const { data, error } = await supabase.functions.invoke('transcribe', { body: form })
 
-    if (!error && !data?.error) return String(data?.text ?? '')
+    if (!error && !data?.error) {
+      // 확신도가 낮은 토막을 떨어내고 남은 글만 돌려준다.
+      // 서버가 숫자를 안 주면(옛 판) 낱말 목록으로만 거른다
+      return keepSpoken(String(data?.text ?? ''), data?.segments ?? null)
+    }
 
     const failure = error ? await readFailure(error) : { error: String(data.error), retryable: false }
     if (failure.retryable && attempt < waits.length) {
