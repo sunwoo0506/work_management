@@ -115,8 +115,13 @@ export type SaveLiveMeetingInput = {
   durationSec: number
   /** AI 초안 원본. 확정본과 둘 다 남긴다 — 그 차이가 학습 신호다 */
   aiDraft: { text: string; minutes: Minutes; model: string } | null
-  /** 「인박스로」 체크한 것만 담겨 온다 */
-  followUps: string[]
+  /**
+   * 「인박스로」 체크한 것만 담겨 온다.
+   *
+   * `area` 는 AI 가 고른 분류다. 인박스를 거쳐 **업무의 영역으로 이어진다** —
+   * 여기서 안 넘기면 부장님이 업무로 올릴 때 영역을 다시 골라야 한다.
+   */
+  followUps: { text: string; area?: string }[]
   /**
    * 민감 회의(회생·인사) 표시.
    *
@@ -169,7 +174,11 @@ export async function saveLiveMeeting(v: SaveLiveMeetingInput): Promise<string> 
       ended_at: v.endedAt || null,
       transcript_source: v.source,
       ai_draft: (v.aiDraft as unknown as Json) ?? null,
-      follow_ups: v.followUps.map((text) => ({ text, task_id: null })) as unknown as Json,
+      follow_ups: v.followUps.map((f) => ({
+        text: f.text,
+        area: f.area || null,
+        task_id: null,
+      })) as unknown as Json,
       sensitive: v.sensitive,
     })
     .select('id')
@@ -178,10 +187,13 @@ export async function saveLiveMeeting(v: SaveLiveMeetingInput): Promise<string> 
 
   if (v.followUps.length > 0) {
     const { error: inboxError } = await supabase.from('inbox').insert(
-      v.followUps.map((text) => ({
+      v.followUps.map((f) => ({
         company_id: v.companyId,
         user_id: userId,
-        content: text,
+        content: f.text,
+        // 분류를 함께 보낸다 — 지난 회의록(sendToInbox)은 원래 보내고 있었는데
+        // 실시간 쪽만 빠져 있었다 (2026-08-18 발견)
+        tag: f.area?.trim() || null,
         origin: '회의록',
         origin_ref: meeting.id,
       })),
@@ -211,10 +223,17 @@ export async function updateMeeting(
     decisions?: string | null
     my_notes?: string | null
     aiDraft?: { text: string; minutes: Minutes; model: string } | null
-    followUps?: string[]
     /** 회의록 양식 본문 (결정사항 · Action Item 등) */
     minutes?: MinutesDoc | null
-    writer?: string | null
+    /**
+     * 인박스로 보낸 Action Item 기록.
+     *
+     * **분류를 함께 담는다.** 예전에는 글만 담아서, 인박스에는 분류가 갔는데
+     * 회의록에 남는 기록에는 안 남았다. 나중에 「이 할 일이 어느 영역이었나」를
+     * 회의록만 보고는 알 수 없었다. 저장할 때(saveLiveMeeting)와 **같은 모양**이다 —
+     * 같은 것을 두 모양으로 두면 한쪽만 고치게 된다.
+     */
+    followUps?: { text: string; area?: string }[]
   },
 ): Promise<void> {
   // 저장 공간이 아는 칸만 담는 그릇. 아무 이름이나 담기면 오타가 그대로 나간다
@@ -225,9 +244,12 @@ export async function updateMeeting(
   if (patch.my_notes !== undefined) row.my_notes = patch.my_notes || null
   if (patch.aiDraft !== undefined) row.ai_draft = patch.aiDraft as unknown as Json
   if (patch.minutes !== undefined) row.minutes = patch.minutes as unknown as Json
-  if (patch.writer !== undefined) row.writer = patch.writer
   if (patch.followUps !== undefined) {
-    row.follow_ups = patch.followUps.map((text) => ({ text, task_id: null })) as unknown as Json
+    row.follow_ups = patch.followUps.map((f) => ({
+      text: f.text,
+      area: f.area || null,
+      task_id: null,
+    })) as unknown as Json
   }
   if (Object.keys(row).length === 0) return
 

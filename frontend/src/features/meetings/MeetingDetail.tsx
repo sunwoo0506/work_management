@@ -186,7 +186,8 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
         .filter((r) => r.text.trim())
       if (rows.length === 0) throw new Error('보낼 Action Item 을 선택해 주세요.')
       await sendToInbox(companyId as string, meeting.id, rows)
-      await updateMeeting(meeting.id, { followUps: rows.map((r) => r.text) })
+      // 분류도 함께 남긴다 — 인박스에만 가고 회의록 기록에는 안 남고 있었다
+      await updateMeeting(meeting.id, { followUps: rows })
       return rows.length
     },
     onSuccess: (n) => {

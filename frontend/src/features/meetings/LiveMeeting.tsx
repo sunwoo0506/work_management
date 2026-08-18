@@ -14,7 +14,9 @@ import {
   usedGlossary,
 } from '../../domain/transcript'
 import type { Minutes, Segment } from '../../domain/transcript'
+import { parseMinutesDoc } from '../../domain/minutes'
 import { useCompanyId } from '../companies/useCompany'
+import { useRegisteredAreas } from '../areas/useAreaOptions'
 import { useLiveTranscript } from './useLiveTranscript'
 import SpeechCheck from './SpeechCheck'
 import { useRecorder } from './useRecorder'
@@ -102,6 +104,8 @@ export default function LiveMeeting() {
   const companyId = useCompanyId()
   const qc = useQueryClient()
   const live = useLiveTranscript()
+  /** 회의록 분류에 쓸 업무영역. 지난 회의록 화면과 같은 목록을 본다 */
+  const areas = useRegisteredAreas()
 
   const [meta, setMeta] = useState<Meta>({
     met_on: ymd(new Date()),
@@ -113,7 +117,7 @@ export default function LiveMeeting() {
   const [sensitive, setSensitive] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [fix, setFix] = useState({ agenda: '', decisions: '' })
-  const [todos, setTodos] = useState<{ text: string; take: boolean }[]>([])
+  const [todos, setTodos] = useState<{ text: string; area: string; take: boolean }[]>([])
   const [recovered, setRecovered] = useState<Saved | null>(null)
 
   /**
@@ -267,6 +271,9 @@ export default function LiveMeeting() {
         attendees: meta.attendees,
         myNotes,
         glossary: used,
+        // ⚠️ 이걸 안 넘기고 있었다(2026-08-18 발견). 지난 회의록 화면만 넘기고
+        //    실시간은 빠져 있어서, AI 가 우리 목록 밖의 분류를 지어냈다
+        areas,
       })
     },
     onSuccess: (reply) => {
@@ -276,7 +283,20 @@ export default function LiveMeeting() {
         agenda: minutes.summary.join('\n'),
         decisions: minutes.decisions.join('\n'),
       })
-      setTodos(minutes.followUps.map((t) => ({ text: t, take: true })))
+      /*
+        할 일은 칸으로 나눠 받는다 — AI 가 「행동 | 담당자 | 기한 | 분류」로 준다.
+        예전에는 그 줄을 통째로 인박스에 넣어서, 인박스에
+        「견적 받기 | 담당자 | 수요일 | 품목·가격」이 그대로 들어갔다.
+
+        형식이 어긋나 못 나눴으면 **예전 방식으로 되돌아간다** —
+        형식이 틀렸다고 사람이 말한 것을 잃으면 안 된다.
+      */
+      const acts = parseMinutesDoc(reply.text, areas).actions
+      setTodos(
+        acts.length > 0
+          ? acts.map((a) => ({ text: a.text, area: a.area, take: true }))
+          : minutes.followUps.map((t) => ({ text: t, area: '', take: true })),
+      )
     },
   })
 
@@ -299,7 +319,7 @@ export default function LiveMeeting() {
         startedAt: startedAtRef.current,
         endedAt: startedAtRef.current ? hhmm(new Date()) : null,
         aiDraft: draft ? { text: draft.text, minutes: draft.minutes, model: draft.model } : null,
-        followUps: todos.filter((t) => t.take).map((t) => t.text),
+        followUps: todos.filter((t) => t.take).map((t) => ({ text: t.text, area: t.area })),
         sensitive,
         // 받아쓴 글이 없으면 「직접입력」이다 — 나중에 전사문을 붙여넣을 회의록이다
         source:
@@ -1028,14 +1048,24 @@ export default function LiveMeeting() {
                             }
                             className="accent-action mt-1.5 shrink-0"
                           />
-                          <TextInput
-                            value={t.text}
-                            onChange={(e) =>
-                              setTodos((prev) =>
-                                prev.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)),
-                              )
-                            }
-                          />
+                          <div className="flex-1 min-w-0">
+                            <TextInput
+                              value={t.text}
+                              onChange={(e) =>
+                                setTodos((prev) =>
+                                  prev.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)),
+                                )
+                              }
+                            />
+                            {/* 분류가 붙었으면 보여 준다 — 이게 그대로 업무의 영역이 되므로
+                                인박스에 가기 전에 눈으로 확인할 수 있어야 한다 */}
+                            {t.area && (
+                              <p className="text-caption text-ink-mute mt-1">
+                                분류 <strong className="font-semibold">{t.area}</strong> — 업무의 영역으로
+                                이어집니다
+                              </p>
+                            )}
+                          </div>
                         </li>
                       ))}
                     </ul>
