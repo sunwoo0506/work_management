@@ -254,23 +254,9 @@ export async function sendToInbox(
   if (error) throw error
 }
 
-/**
- * 업무영역 목록. 「기준 › 설정 › 업무영역」에서 관리하는 것을 그대로 읽는다.
- *
- * 회의록 전용 분류를 따로 만들지 않는다 — 두 벌로 관리하면 반드시 어긋나고,
- * Action Item 이 업무가 될 때 영역을 다시 골라야 한다.
- */
-export async function loadAreas(companyId: string): Promise<string[]> {
-  const { data, error } = await supabase
-    .from('settings')
-    .select('value')
-    .eq('company_id', companyId)
-    .eq('key', 'areas')
-    .maybeSingle()
-  if (error) throw error
-  const raw = data?.value
-  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
-}
+// 업무영역 목록은 여기 없다 → `features/areas/useAreaOptions.ts`
+// 회의록만의 것이 아니라 업무·절차·인박스가 함께 쓰는 것이어서 밖으로 옮겼다.
+// 여기 두면 업무 화면이 회의록 파일을 가져다 써야 한다.
 
 /** 사내 용어집. 「기준 › 설정」에서 관리하는 것을 그대로 읽는다 */
 export async function loadGlossary(companyId: string): Promise<GlossaryPair[]> {

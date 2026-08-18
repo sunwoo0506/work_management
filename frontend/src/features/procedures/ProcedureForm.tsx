@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Field, PillButton, Select, TextArea, TextInput } from '../../components/Field'
-import { AI_DELEGATIONS, AREAS, PROCEDURE_STATUSES, TRIGGER_TYPES } from '../../domain/types'
+import { AI_DELEGATIONS, PROCEDURE_STATUSES, TRIGGER_TYPES } from '../../domain/types'
 import { describeTrigger } from '../../domain/trigger'
 import type { TriggerRule, TriggerType } from '../../domain/trigger'
+import { AreaSelect } from '../areas/AreaSelect'
 import type { Procedure } from './api'
 
 export type ProcedureValues = {
@@ -81,10 +82,7 @@ export default function ProcedureForm({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="영역">
-          <Select value={v.area ?? ''} onChange={(e) => set('area', e.target.value)}>
-            <option value="">—</option>
-            {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </Select>
+          <AreaSelect value={v.area} onChange={(next) => set('area', next)} />
         </Field>
         <Field label="상태" hint="확정해야 「절차 대기」에 뜹니다">
           <Select value={v.status} onChange={(e) => set('status', e.target.value)}>

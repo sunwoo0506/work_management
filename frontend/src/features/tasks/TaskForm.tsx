@@ -5,9 +5,10 @@ import { ProgressBar } from '../../components/ui'
 import { checklistCount } from '../../domain/progress'
 import { priorityLabel, priorityMeaning } from '../../domain/priority'
 import {
-  AREAS, PRIORITIES, REQUESTED_SOURCES, TASK_SOURCES, TASK_STATUSES,
+  PRIORITIES, REQUESTED_SOURCES, TASK_SOURCES, TASK_STATUSES,
 } from '../../domain/types'
 import type { TaskSource } from '../../domain/types'
+import { AreaSelect } from '../areas/AreaSelect'
 import { useDirectives } from '../directives/hooks'
 import { GUIDES } from './guides'
 import { useChecklist } from './hooks'
@@ -116,10 +117,7 @@ export default function TaskForm({
           </Select>
         </Field>
         <Field label="영역">
-          <Select value={v.area ?? ''} onChange={(e) => set('area', e.target.value)}>
-            <option value="">—</option>
-            {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </Select>
+          <AreaSelect value={v.area} onChange={(next) => set('area', next)} />
         </Field>
         {/* 저장값은 그대로 P0·P1·P2 다. 고를 때만 사람 말로 보여 준다 */}
         <Field label="중요도" hint={priorityMeaning(v.priority ?? 'P1')}>

@@ -19,7 +19,6 @@ import {
   deleteMeetingAudio,
   fetchMeetingAudio,
   listMeetingAudio,
-  loadAreas,
   loadGlossary,
   sendToInbox,
   transcribeChunk,
@@ -27,6 +26,7 @@ import {
   updateMeetingHead,
 } from './api'
 import type { MeetingAudio } from './api'
+import { useRegisteredAreas } from '../areas/useAreaOptions'
 import { printMinutes } from './printMinutes'
 
 type Meeting = Row<'meetings'>
@@ -78,12 +78,14 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
     enabled: !!companyId,
   })
 
-  /** 「기준 › 설정 › 업무영역」 목록. 회의록 분류로 그대로 쓴다 */
-  const { data: areas } = useQuery({
-    queryKey: ['areas', companyId],
-    queryFn: () => loadAreas(companyId as string),
-    enabled: !!companyId,
-  })
+  /**
+   * 회의록 분류에 쓸 업무영역.
+   *
+   * 여기만 **등록된 것만** 쓴다 — 업무·절차 화면과 달리 기본 갈래로 채우지 않는다.
+   * 회의록 분류는 나중에 리포트의 뼈대가 되므로, 회사에 맞는 갈래를 한 번 정하고
+   * 가는 편이 낫다고 봤다. 비어 있으면 분류 칸을 아예 그리지 않는다.
+   */
+  const areas = useRegisteredAreas()
 
   /**
    * 이 회의에 딸린, 아직 글이 안 된 소리들.
