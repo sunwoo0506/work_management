@@ -4,7 +4,6 @@ import {
   clock,
   editSegment,
   hhmm,
-  parseMinutes,
   toggleMark,
   transcriptStats,
   transcriptText,
@@ -137,49 +136,6 @@ describe('usedGlossary — 이번 회의에 나온 용어만', () => {
 
   it('빈 용어는 아무 글에나 걸리지 않는다', () => {
     expect(usedGlossary('아무 말', [{ term: '  ', means: '빈 것' }])).toEqual([])
-  })
-})
-
-describe('parseMinutes — AI 초안을 칸으로 나누기', () => {
-  const 답 = `[요약]
-- 자재 단가 인상 통보를 받았습니다
-- 대체 거래처를 알아보기로 했습니다
-
-[결정]
-- 이번 달 발주는 기존 단가로 진행합니다
-
-[할 일]
-- 대체 거래처 3곳 견적 받기
-- 단가 인상 공문 회신
-
-[확인 필요]
-- 「타이백」으로 들린 대목 — 「타이벡」이 맞는지`
-
-  it('네 칸으로 나눈다', () => {
-    const m = parseMinutes(답)
-    expect(m.summary).toHaveLength(2)
-    expect(m.decisions).toEqual(['이번 달 발주는 기존 단가로 진행합니다'])
-    expect(m.followUps).toEqual(['대체 거래처 3곳 견적 받기', '단가 인상 공문 회신'])
-    expect(m.checks).toHaveLength(1)
-  })
-
-  it('머리표 형식이 달라도 읽는다', () => {
-    const m = parseMinutes('## 요약\n1. 첫째\n**결정**\n· 둘째')
-    expect(m.summary).toEqual(['첫째'])
-    expect(m.decisions).toEqual(['둘째'])
-  })
-
-  it('「없음」은 항목으로 담지 않는다', () => {
-    expect(parseMinutes('[결정]\n없음').decisions).toEqual([])
-  })
-
-  it('칸 이름이 하나도 없으면 빈 칸을 돌려준다 (화면이 원문을 보여 준다)', () => {
-    const m = parseMinutes('그냥 줄글로 답한 경우입니다')
-    expect(m).toEqual({ summary: [], decisions: [], followUps: [], checks: [] })
-  })
-
-  it('빈 답에도 죽지 않는다', () => {
-    expect(parseMinutes('').summary).toEqual([])
   })
 })
 

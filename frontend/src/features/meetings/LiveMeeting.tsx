@@ -7,14 +7,13 @@ import {
   clock,
   editSegment,
   hhmm,
-  parseMinutes,
   toggleMark,
   transcriptStats,
   transcriptText,
   usedGlossary,
 } from '../../domain/transcript'
 import type { Minutes, Segment } from '../../domain/transcript'
-import { parseMinutesDoc } from '../../domain/minutes'
+import { draftView, parseMinutesDoc } from '../../domain/minutes'
 import { useCompanyId } from '../companies/useCompany'
 import { useRegisteredAreas } from '../areas/useAreaOptions'
 import { useLiveTranscript } from './useLiveTranscript'
@@ -282,7 +281,14 @@ export default function LiveMeeting() {
       })
     },
     onSuccess: (reply) => {
-      const minutes = parseMinutes(reply.text)
+      /*
+        AI 글을 **회의록 양식으로 한 번만** 나눈다.
+        전에는 여기서 두 벌로 나눴다 — 훑어보기용 네 칸과 양식용. 형식이 바뀔 때마다
+        두 곳을 고쳐야 했고, 실제로 한쪽만 고쳐 놓아 「요약」 칸이 늘 비어 있었다.
+        지금은 양식에서 네 칸을 뽑아 쓴다 (domain/minutes.ts 의 draftView).
+      */
+      const doc = parseMinutesDoc(reply.text, areas)
+      const minutes = draftView(doc)
       setDraft({ text: reply.text, minutes, model: reply.model, truncated: reply.truncated })
       setFix({
         agenda: minutes.summary.join('\n'),
@@ -296,7 +302,7 @@ export default function LiveMeeting() {
         형식이 어긋나 못 나눴으면 **예전 방식으로 되돌아간다** —
         형식이 틀렸다고 사람이 말한 것을 잃으면 안 된다.
       */
-      const acts = parseMinutesDoc(reply.text, areas).actions
+      const acts = doc.actions
       setTodos(
         acts.length > 0
           ? acts.map((a) => ({ text: a.text, area: a.area, take: true }))

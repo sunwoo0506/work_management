@@ -1,8 +1,9 @@
+import { CONFIRM_NOTICE, CONFIRM_STATEMENT } from '../../domain/minutes'
 import type { MinutesDoc } from '../../domain/minutes'
 import { timeRange } from '../../domain/transcript'
 
 /**
- * 회의록을 **PDF로 내려받게** 한다.
+ * 회의록을 **PDF로 내려받게** 한다. 회사에서 쓰는 서식 그대로 그린다.
  *
  * ── 왜 인쇄 창을 여나 ────────────────────────────────────
  * PDF 를 만드는 라이브러리를 넣으면 **한글 글꼴을 같이 담아야 한다.** 그것만 몇 MB 라
@@ -22,7 +23,7 @@ export type MinutesHead = {
   attendees?: string | null
   writer?: string | null
   durationSec?: number | null
-  /** 회의 시작·종료 벽시계 시각. 양식 1번 기본정보의 「시간」 칸 */
+  /** 회의 시작·종료 벽시계 시각. 서식 기본정보의 「시간」 칸 */
   startedAt?: string | null
   endedAt?: string | null
 }
@@ -32,18 +33,67 @@ function html(m: MinutesDoc, head: MinutesHead): string {
   const esc = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+  /** 줄바꿈을 살려서 찍는다 — 논의내용은 여러 줄로 적는 칸이다 */
+  const multi = (s: string) => esc(s).replace(/\n/g, '<br />')
+
   const rows = (arr: string[]) =>
     arr.length ? arr.map((x) => `<li>${esc(x)}</li>`).join('') : '<li class="none">없음</li>'
 
-  const table = (head2: string[], body: string[][]) => {
-    if (body.length === 0) return '<p class="none">없음</p>'
-    return `<table>
-      <thead><tr>${head2.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
-      <tbody>${body
-        .map((r) => `<tr>${r.map((c) => `<td>${esc(c || '')}</td>`).join('')}</tr>`)
-        .join('')}</tbody>
-    </table>`
-  }
+  const when = [
+    esc(head.metOn),
+    timeRange(head.startedAt, head.endedAt) ? esc(timeRange(head.startedAt, head.endedAt)) : '',
+    head.durationSec ? `(${Math.round(head.durationSec / 60)}분)` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  /*
+    안건 목록은 서식에서 기본정보 표의 한 칸에 「1. …  2. …」로 들어간다.
+    줄을 나누지 않고 이어 붙이는 것이 원본 모양이다.
+  */
+  const agendaLine =
+    m.agenda.length > 0
+      ? m.agenda.map((a, i) => `${i + 1}. ${esc(a)}`).join('&nbsp;&nbsp; ')
+      : '<span class="none">없음</span>'
+
+  const block = (label: string, text: string) =>
+    text.trim() ? `<p class="blk"><span class="blk-h">■ ${label}</span><br />${multi(text)}</p>` : ''
+
+  const items = m.items
+    .map(
+      (it, i) => `<section class="item">
+        <h3>안건${i + 1}. ${esc(it.title)}${it.area ? ` <span class="area">[${esc(it.area)}]</span>` : ''}</h3>
+        ${block('현재상황', it.situation)}
+        ${block('논의내용', it.discussion)}
+        ${block('결론', it.conclusion)}
+        ${block('조치사항', it.action)}
+      </section>`,
+    )
+    .join('')
+
+  const actionRows = m.actions
+    .map(
+      (a, i) => `<tr>
+        <td class="c">${i + 1}</td>
+        <td>${esc(a.text)}${a.area ? ` <span class="area">[${esc(a.area)}]</span>` : ''}</td>
+        <td>${esc(a.owner)}</td>
+        <td>${esc(a.due)}</td>
+        <td>${esc(a.note)}</td>
+      </tr>`,
+    )
+    .join('')
+
+  /*
+    확인란은 「이름(미확인)」 형태로 늘어놓는다. 확인을 받은 사람만 굵게 표시한다 —
+    종이에서 **아직 확인 안 된 사람이 누구인지**가 한눈에 보여야 한다.
+  */
+  const confirmLine = m.confirms
+    .map((c) =>
+      c.confirmed
+        ? `<strong>${esc(c.name)}(확인)</strong>`
+        : `${esc(c.name)}<span class="none">(미확인)</span>`,
+    )
+    .join(', ')
 
   return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8" />
@@ -53,63 +103,95 @@ function html(m: MinutesDoc, head: MinutesHead): string {
   @page { size: A4; margin: 18mm 16mm; }
   body { font-family: -apple-system, "Malgun Gothic", "맑은 고딕", sans-serif;
          color: #1d1d1f; font-size: 10.5pt; line-height: 1.55; }
-  h1 { font-size: 18pt; margin: 0 0 14px; letter-spacing: -0.5px; }
+  .org { text-align: center; color: #666; font-size: 9.5pt; margin: 0 0 2px; }
+  h1 { font-size: 20pt; margin: 0 0 16px; letter-spacing: 8px; text-align: center; }
   h2 { font-size: 12pt; margin: 22px 0 8px; padding-bottom: 4px;
        border-bottom: 1px solid #d0d0d0; }
-  dl { display: grid; grid-template-columns: 90px 1fr; gap: 4px 12px; margin: 0; }
-  dt { color: #666; }
+  h3 { font-size: 11pt; margin: 0 0 6px; }
   ul { margin: 0; padding-left: 18px; }
   li { margin: 2px 0; }
   table { width: 100%; border-collapse: collapse; margin-top: 4px; }
   th, td { border: 1px solid #d0d0d0; padding: 6px 8px; text-align: left;
            vertical-align: top; word-break: break-word; }
   th { background: #f5f5f7; font-weight: 600; }
+  td.c { text-align: center; width: 32px; }
+  .info th { width: 78px; white-space: nowrap; }
+  .item { margin: 0 0 14px; padding: 10px 12px; border: 1px solid #e2e2e4; }
+  .blk { margin: 6px 0 0; }
+  .blk-h { font-weight: 600; }
+  .area { color: #666; font-weight: 400; font-size: 9.5pt; }
   .none { color: #999; }
-  .foot { margin-top: 26px; padding-top: 10px; border-top: 1px solid #e0e0e0;
-          color: #777; font-size: 9pt; }
-  /* 표가 쪽 경계에서 잘리지 않게 */
-  tr, li { break-inside: avoid; }
+  .confirm { margin-top: 8px; padding: 10px 12px; border: 1px solid #d0d0d0; }
+  .foot { margin-top: 10px; color: #777; font-size: 9pt; line-height: 1.5; }
+  /* 표·안건이 쪽 경계에서 잘리지 않게 */
+  tr, li, .item { break-inside: avoid; }
 </style></head>
 <body>
-  <h1>회의록</h1>
+  ${m.orgLine ? `<p class="org">${esc(m.orgLine)}</p>` : ''}
+  <h1>회 의 록</h1>
 
-  <h2>1. 회의 기본정보</h2>
-  <dl>
-    <dt>회의명</dt><dd>${esc(head.title)}</dd>
-    <dt>일시</dt><dd>${esc(head.metOn)}${
-      timeRange(head.startedAt, head.endedAt) ? ` ${esc(timeRange(head.startedAt, head.endedAt))}` : ''
-    }${head.durationSec ? ` (${Math.round(head.durationSec / 60)}분)` : ''}</dd>
-    ${head.place ? `<dt>장소/방식</dt><dd>${esc(head.place)}</dd>` : ''}
-    ${head.attendees ? `<dt>참석자</dt><dd>${esc(head.attendees)}</dd>` : ''}
-    ${head.writer ? `<dt>작성자</dt><dd>${esc(head.writer)}</dd>` : ''}
-  </dl>
+  <table class="info">
+    <tbody>
+      <tr>
+        <th>일　　시</th><td>${when}</td>
+        <th>작 성 자</th><td>${esc(head.writer ?? '') || '<span class="none">—</span>'}</td>
+      </tr>
+      <tr>
+        <th>장　　소</th><td>${esc(head.place ?? '') || '<span class="none">—</span>'}</td>
+        <th>작성일자</th><td>${esc(m.writtenOn) || '<span class="none">—</span>'}</td>
+      </tr>
+      <tr>
+        <th>회 의 명</th><td colspan="3">${esc(head.title)}</td>
+      </tr>
+      <tr>
+        <th>참　　석</th><td colspan="3">${esc(head.attendees ?? '') || '<span class="none">—</span>'}</td>
+      </tr>
+      <tr>
+        <th>안　　건</th><td colspan="3">${agendaLine}</td>
+      </tr>
+    </tbody>
+  </table>
 
-  <h2>2. 회의 목적</h2>
-  <ul>${rows(m.purpose)}</ul>
+  ${m.purpose.length > 0 ? `<h2>회의 목적</h2><ul>${rows(m.purpose)}</ul>` : ''}
 
-  <h2>3. 주요 안건</h2>
-  <ul>${rows(m.agenda)}</ul>
+  ${items || '<h2>안건별 논의</h2><p class="none">없음</p>'}
 
-  <h2>4. 안건별 논의 내용</h2>
-  ${table(['안건', '주요 논의 내용', '결과'], m.discussions.map((d) => [d.topic, d.points, d.result]))}
+  <h2>조치사항 정리</h2>
+  ${
+    actionRows
+      ? `<table>
+          <thead><tr><th>No</th><th>조치 내용</th><th>담당</th><th>마감기한</th><th>비고</th></tr></thead>
+          <tbody>${actionRows}</tbody>
+        </table>`
+      : '<p class="none">없음</p>'
+  }
 
-  <h2>5. 결정사항</h2>
-  ${table(['No.', '결정 내용', '비고'], m.decisions.map((d, i) => [String(i + 1), d.text, d.note]))}
+  ${m.pending.length > 0 ? `<h2>미결 · 추가 확인사항</h2><ul>${rows(m.pending)}</ul>` : ''}
 
-  <h2>6. Action Item</h2>
-  ${table(
-    ['No.', '해야 할 일', '담당자', '완료기한', '상태'],
-    m.actions.map((a, i) => [String(i + 1), a.text, a.owner, a.due, a.status || '예정']),
-  )}
+  ${
+    m.nextChecks.length > 0 || m.next.date || m.next.agenda
+      ? `<h2>다음 회의 주요 점검 사항</h2>
+         ${
+           m.next.date || m.next.agenda
+             ? `<p>예정일 ${esc(m.next.date) || '미정'}${
+                 m.next.agenda ? ` · 주요 안건 ${esc(m.next.agenda)}` : ''
+               }</p>`
+             : ''
+         }
+         ${m.nextChecks.length > 0 ? `<ul>${rows(m.nextChecks)}</ul>` : ''}`
+      : ''
+  }
 
-  <h2>7. 미결 · 추가 확인사항</h2>
-  <ul>${rows(m.pending)}</ul>
-
-  <h2>8. 다음 회의</h2>
-  <dl>
-    <dt>예정일</dt><dd>${esc(m.next.date) || '<span class="none">미정</span>'}</dd>
-    <dt>주요 안건</dt><dd>${esc(m.next.agenda) || '<span class="none">미정</span>'}</dd>
-  </dl>
+  ${
+    m.confirms.length > 0
+      ? `<h2>참석자 확인</h2>
+         <div class="confirm">
+           <p>${esc(CONFIRM_STATEMENT)}</p>
+           <p>${confirmLine}</p>
+         </div>
+         <p class="foot">${esc(CONFIRM_NOTICE)}</p>`
+      : ''
+  }
 
   ${
     m.checks.length > 0

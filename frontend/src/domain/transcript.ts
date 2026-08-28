@@ -19,7 +19,17 @@ export type Segment = {
 
 export type GlossaryPair = { term: string; means: string }
 
-/** AI 가 돌려준 회의록 초안을 칸으로 나눈 것 */
+/**
+ * AI 초안을 **네 칸으로 줄여 본 것.** 실시간 회의 화면이 훑어볼 때와
+ * `ai_draft`(초안 원본)에 담을 때 쓴다.
+ *
+ * ⚠️ 회의록 **양식**은 이것이 아니라 `domain/minutes.ts` 의 `MinutesDoc` 다.
+ *    2026-08-28 에 양식을 회사 서식(안건별 4단 + 조치사항 표 + 참석자 확인란)으로
+ *    바꾸면서, 여기 있던 `parseMinutes`(AI 글을 이 네 칸으로 나누던 것)를 **지웠다.**
+ *    같은 글을 두 벌로 나누고 있어서 형식이 바뀔 때마다 두 곳을 고쳐야 했고,
+ *    실제로 한쪽만 고쳐 놓아 「요약」 칸이 늘 비어 있었다.
+ *    지금은 `minutes.ts` 의 `draftView(doc)` 가 양식에서 이 네 칸을 뽑아 준다.
+ */
 export type Minutes = {
   summary: string[]
   decisions: string[]
@@ -161,62 +171,6 @@ export function usedGlossary(text: string, glossary: readonly GlossaryPair[]): G
   })
 }
 
-// ── AI 초안 나누기 ────────────────────────────────────────
-//
-// AI 에게 「[요약] [결정] [할 일] [확인 필요]」 네 칸으로 답하라고 시킨다.
-// 그래도 머리표(#·**·번호)를 붙여 오는 일이 있으므로 느슨하게 읽는다.
-// 못 알아들으면 빈 칸을 돌려주고, 화면은 원문을 그대로 보여 준다 —
-// 형식이 어긋났다고 사람이 말한 것을 잃으면 안 된다.
-
-const HEADINGS: { key: keyof Minutes; words: string[] }[] = [
-  { key: 'summary', words: ['요약', '정리', '개요'] },
-  { key: 'decisions', words: ['결정', '결정사항', '합의'] },
-  { key: 'followUps', words: ['할 일', '할일', '후속조치', '후속', '액션'] },
-  { key: 'checks', words: ['확인 필요', '확인필요', '확인', '불확실'] },
-]
-
-/** 머리표·괄호·별표를 걷어낸 알맹이 */
-function strip(line: string): string {
-  return line
-    // ⚠️ 숫자를 무턱대고 지우면 안 된다. 「8/25」의 8 이 머리표로 오인돼 잘렸다.
-    // 머리표(#, -, ·)와 **번호 매기기(1. 2))** 만 지운다
-    .replace(/^\s*[#>*\-·•\][【】]*\s*/, '')
-    .replace(/^\d+[.)]\s+/, '')
-    .replace(/[*_`]/g, '')
-    .replace(/[[\]【】:：]+\s*$/, '')
-    .trim()
-}
-
-function headingOf(line: string): keyof Minutes | null {
-  const bare = strip(line).replace(/[:：]/g, '').trim()
-  if (bare.length === 0 || bare.length > 8) return null
-  for (const h of HEADINGS) {
-    if (h.words.includes(bare)) return h.key
-  }
-  return null
-}
-
-export function parseMinutes(text: string): Minutes {
-  const out: Minutes = { summary: [], decisions: [], followUps: [], checks: [] }
-  let current: keyof Minutes | null = null
-
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue
-
-    const heading = headingOf(line)
-    if (heading) {
-      current = heading
-      continue
-    }
-    if (!current) continue
-
-    const item = strip(line)
-    // 「없음」은 AI 가 빈 칸을 채우려고 적는 말이다. 항목으로 담지 않는다
-    if (!item || item === '없음' || item === '-') continue
-    out[current].push(item.slice(0, 300))
-  }
-  return out
-}
 
 /**
  * 나중에 받아쓴 글을 **시각에 맞는 자리에** 끼워 넣는다.

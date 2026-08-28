@@ -5,6 +5,7 @@ import { Field, PillButton, TextArea, TextInput } from '../../components/Field'
 import { clock, hhmm, mergeIntoTranscript, timeRange, usedGlossary } from '../../domain/transcript'
 import {
   EMPTY_MINUTES,
+  decisionsOf,
   mergeMinutes,
   minutesToText,
   parseMinutesDoc,
@@ -164,7 +165,7 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
       setDoc(reply.doc)
       // 목록에서 한 줄로 훑을 때 쓰는 요약 두 칸도 비어 있으면 채운다
       if (!agenda.trim()) setAgenda(reply.doc.agenda.join('\n'))
-      if (!decisions.trim()) setDecisions(reply.doc.decisions.map((d) => d.text).join('\n'))
+      if (!decisions.trim()) setDecisions(decisionsOf(reply.doc).map((d) => d.text).join('\n'))
       setPicked(new Set(reply.doc.actions.map((_, i) => i)))
 
       // AI 초안 원본을 굳힌다 — 확정본과의 차이가 「AI 가 뭘 놓쳤나」를 알려주는 신호다
@@ -396,7 +397,12 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
 
       {tab === '회의록' ? (
         <div className="space-y-4">
-          <MinutesForm value={doc} onChange={setDoc} areas={areas ?? []} />
+          <MinutesForm
+            value={doc}
+            onChange={setDoc}
+            areas={areas ?? []}
+            attendees={head.attendees}
+          />
 
           {/* ── Action Item → 인박스 ──────────────────
               회의록이 **일로 이어지는 유일한 통로**다. 그래서 AI 초안을 만든 직후만이
@@ -612,7 +618,16 @@ const PART_CHARS = 15_000
 
 /** Action Item 한 줄을 인박스에 넣을 문장으로 */
 function actionLine(a: ActionItem): string {
-  return [a.text, a.owner && `담당 ${a.owner}`, a.due && `기한 ${a.due}`].filter(Boolean).join(' · ')
+  return [
+    a.text,
+    a.owner && `담당 ${a.owner}`,
+    a.due && `기한 ${a.due}`,
+    // 비고는 「왜 아직 못 하나」가 적히는 칸이다. 인박스로 넘어갈 때 이것이 빠지면
+    // 「자료 수령 대기」 같은 전제가 사라져서 무턱대고 시작하게 된다
+    a.note && `비고 ${a.note}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 /**
@@ -655,17 +670,45 @@ function asDoc(raw: unknown): MinutesDoc {
   const r = raw as Record<string, unknown>
   const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : [])
   const next = (r.next ?? {}) as { date?: unknown; agenda?: unknown }
+  const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+  /*
+    2026-08-28 이전에 저장된 회의록은 「논의(안건|내용|결과)」였다.
+    그 칸을 새 서식의 안건 카드로 옮겨 담는다 — 옛 회의록을 열었을 때
+    본문이 통째로 비어 보이면 안 된다.
+  */
+  const legacy = arr<Record<string, unknown>>(r.discussions).map((d) => ({
+    title: str(d.topic),
+    situation: '',
+    discussion: str(d.points),
+    conclusion: str(d.result),
+    action: '',
+    area: str(d.area),
+  }))
   return {
+    orgLine: str(r.orgLine),
+    writtenOn: str(r.writtenOn),
     purpose: arr<string>(r.purpose),
     agenda: arr<string>(r.agenda),
-    discussions: arr(r.discussions),
-    decisions: arr(r.decisions),
-    actions: arr(r.actions),
+    items: r.items ? arr(r.items) : legacy,
+    // 옛 회의록의 조치사항에는 「비고」가 없다. 없으면 빈 칸으로 채운다
+    actions: arr<Record<string, unknown>>(r.actions).map((a) => ({
+      text: str(a.text),
+      owner: str(a.owner),
+      due: str(a.due),
+      note: str(a.note),
+      status: str(a.status) || '예정',
+      area: str(a.area),
+    })),
     pending: arr<string>(r.pending),
+    nextChecks: arr<string>(r.nextChecks),
     next: {
       date: typeof next.date === 'string' ? next.date : '',
       agenda: typeof next.agenda === 'string' ? next.agenda : '',
     },
+    confirms: arr<Record<string, unknown>>(r.confirms).map((c) => ({
+      name: str(c.name),
+      confirmed: c.confirmed === true,
+    })),
     checks: arr<string>(r.checks),
   }
 }
