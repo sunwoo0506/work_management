@@ -26,9 +26,20 @@ export type TranscribeModel = {
   /**
    * 토막마다 「말없음확률」을 주는가.
    *
-   * ⚠️ **이게 지어낸 말을 거르는 결정적 신호다.** 안 주는 모델을 고르면
-   *    그물이 「낱말 목록」 한 겹만 남는다 (domain/hallucination.ts).
-   *    사용자가 모르고 고르면 안 되므로 화면에 밝힌다.
+   * ── ⚠️ 2026-09-05 에 재 보고 뜻이 바뀐 값이다 ──────────
+   * 처음엔 「이게 없으면 지어낸 말이 샌다」로 적었다. **재 보니 반대였다.**
+   * 무음 15초를 세 모델에 똑같이 넣었더니 —
+   *
+   *   whisper-1       162자를 지어냈다 (같은 말 반복). 숫자 0.847 로 걸러졌다
+   *   gpt-transcribe  빈 글
+   *   gemini-3.5      빈 글
+   *
+   * **숫자 그물이 필요했던 건 whisper-1 자신 때문이었다.** 나머지 둘은
+   * 애초에 안 지어내서 거를 것이 없었다.
+   *
+   * 그래도 이 값을 남겨 두는 이유 — **시험은 한 번뿐이고 회의실은 다양하다.**
+   * 사람 목소리가 흐릿하게 섞인 구간에서도 그럴지는 아직 모른다.
+   * 숫자가 없으면 **그때 잡을 그물이 낱말 목록뿐**인 것은 여전히 사실이다.
    */
   givesSpeechProb: boolean
 }
@@ -45,7 +56,7 @@ export const TRANSCRIBE_MODELS: TranscribeModel[] = [
     id: 'whisper-1',
     label: 'Whisper',
     vendor: 'OpenAI',
-    note: '지금까지 쓰던 것. 토막마다 「말이 맞나」를 숫자로 알려 줘서 지어낸 말이 가장 잘 걸러집니다.',
+    note: '지금까지 쓰던 것. 「말이 맞나」를 숫자로 알려 줍니다. 다만 조용한 구간에서 없는 말을 지어내는 것도 이 모델입니다 — 그 숫자로 걸러 냅니다.',
     perMinuteUsd: 0.006,
     givesSpeechProb: true,
   },
@@ -53,7 +64,7 @@ export const TRANSCRIBE_MODELS: TranscribeModel[] = [
     id: 'gpt-transcribe',
     label: 'GPT 받아쓰기',
     vendor: 'OpenAI',
-    note: 'OpenAI 의 최신 받아쓰기. Whisper 보다 정확하고 값도 쌉니다. 다만 「말이 맞나」 숫자를 주지 않습니다.',
+    note: 'OpenAI 의 최신 받아쓰기. 값이 더 싸고, 조용한 구간에서 없는 말을 지어내지 않았습니다(2026-09-05 실측).',
     perMinuteUsd: 0.0045,
     givesSpeechProb: false,
   },
@@ -61,7 +72,7 @@ export const TRANSCRIBE_MODELS: TranscribeModel[] = [
     id: 'gemini-3.5-transcribe',
     label: '제미나이 받아쓰기',
     vendor: '구글',
-    note: '사내 용어를 낱말 목록으로 직접 넘겨 그 표기로 받아씁니다. 「말이 맞나」 숫자는 주지 않습니다.',
+    note: '2026-09-05 실측에서 셋 중 가장 정확했고 가장 쌌습니다. 사내 용어를 낱말 목록으로 넘겨 「타이벡」을 유일하게 맞혔습니다.',
     perMinuteUsd: 0.0035,
     givesSpeechProb: false,
   },

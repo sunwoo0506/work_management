@@ -11,10 +11,15 @@ import { TRANSCRIBE_MODELS, findTranscribeModel } from './transcribeModels'
  * 고른 값은 기억해 두므로(transcribeModels.ts) 매번 다시 고를 필요는 없다.
  *
  * ── ⚠️ 무엇을 반드시 밝히나 ──────────────────────────────
- * whisper-1 말고는 **토막마다 「말이 맞나」 숫자를 안 준다.** 그 숫자가
- * 「시청해주셔서 감사합니다」 같은 지어낸 말을 거르는 결정적 신호였다(2026-08-19).
- * 모르고 바꾸면 회의록에 없는 말이 들어와도 **왜 그런지 알 수 없다.**
- * 그래서 고른 순간 그 자리에서 알려 준다.
+ * whisper-1 말고는 **토막마다 「말이 맞나」 숫자를 안 준다.**
+ *
+ * 처음엔 이걸 「그러니 지어낸 말이 샌다」로 적었는데, **2026-09-05 에 재 보니
+ * 반대였다** — 무음을 넣었을 때 지어낸 쪽은 whisper-1 이었고 나머지 둘은
+ * 빈 글을 냈다. 숫자 그물이 필요했던 건 whisper-1 자신 때문이었다.
+ *
+ * 그래도 밝힌다. **시험은 한 번뿐이고 회의실은 다양하다.** 숫자가 없으면
+ * 나중에 무슨 일이 생겨도 **잡을 그물이 낱말 목록뿐**인 것은 그대로다.
+ * 겁주는 문구가 아니라 **무엇이 다른지**를 알려 주는 문구여야 한다.
  */
 export function TranscribeModelPicker({
   value,
@@ -64,10 +69,11 @@ export function TranscribeModelPicker({
       {/* 숫자를 안 주는 모델을 골랐을 때만. 늘 띄우면 아무도 안 읽는다 */}
       {picked && !picked.givesSpeechProb && (
         <p className="text-caption text-ink-soft mt-1.5 leading-relaxed">
-          ⚠️ 이 모델은 <strong className="font-semibold">토막마다 「말이 맞나」 숫자를 주지
-          않습니다.</strong> 「시청해주셔서 감사합니다」처럼 <strong className="font-semibold">회의에서
-          아무도 하지 않은 말</strong>이 섞여 들어올 수 있습니다. 전사문을 한 번 훑어보시고,
-          자주 그러면 Whisper 로 되돌리세요.
+          이 모델은 <strong className="font-semibold">토막마다 「말이 맞나」 숫자를 주지
+          않습니다.</strong> 2026-09-05 시험에서는 조용한 구간에 <strong className="font-semibold">없는
+          말을 지어내지 않았지만</strong>(그때 지어낸 쪽은 오히려 Whisper 였습니다),
+          한 번 재 본 것뿐입니다. 회의 뒤 전사문을 한 번 훑어보시고, 없는 말이 보이면
+          Whisper 로 되돌려 주세요.
         </p>
       )}
     </div>
