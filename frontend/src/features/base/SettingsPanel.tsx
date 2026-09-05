@@ -5,6 +5,7 @@ import type { Json } from '../../lib/database.types'
 import { Card } from '../../components/ui'
 import { PillButton, TextInput } from '../../components/Field'
 import { useCompanyId } from '../companies/useCompany'
+import PasswordCard from '../auth/PasswordCard'
 
 /**
  * 설정 — 업체별 키-값.
@@ -79,6 +80,9 @@ export default function SettingsPanel() {
           onChange={(next) => save.mutate({ key: 'glossary', value: next })}
         />
       </Card>
+
+      {/* 로그인 방법은 회사별 설정이 아니라 **내 계정**의 것이라 맨 아래에 둔다 */}
+      <PasswordCard />
     </div>
   )
 }
