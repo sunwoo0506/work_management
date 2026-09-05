@@ -102,7 +102,13 @@ Deno.serve(async (req) => {
         DEFAULT_TRANSCRIBE_MODEL,
     )
 
-    const result = await pickTranscriber(model).run({ file, hint, model })
+    /*
+      어느 회사 것인지 **손에 들고 있는다.** 실패했을 때 안내에 회사 이름이
+      들어가는데, 구글 한도 문제에 「OpenAI 결제를 확인하세요」라고 띄운 적이
+      있다 (2026-09-05). 사용자가 엉뚱한 곳을 뒤지게 된다.
+    */
+    const transcriber = pickTranscriber(model)
+    const result = await transcriber.run({ file, hint, model })
 
     /*
       토막마다의 확신도를 **그대로 넘긴다.** 무엇을 버릴지는 화면이 정한다.
@@ -113,7 +119,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     if (e instanceof TranscribeError) {
       console.error('transcribe failed', e.status, e.raw)
-      return json(explainFailure(e.status, e.raw), 502)
+      return json(explainFailure(e.status, e.raw, e.provider), 502)
     }
     if (e instanceof MissingKeyError) {
       console.error('transcribe misconfigured', e.message)

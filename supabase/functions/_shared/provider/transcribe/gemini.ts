@@ -86,7 +86,7 @@ export function createGeminiTranscriber(): Transcriber {
         body: JSON.stringify(body),
       })
 
-      if (!res.ok) throw new TranscribeError(res.status, await res.text())
+      if (!res.ok) throw new TranscribeError(res.status, await res.text(), 'gemini')
 
       let json = await res.json()
 
@@ -115,7 +115,7 @@ async function reread(key: string, id: string): Promise<any> {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/${id}`, {
     headers: { 'x-goog-api-key': key },
   })
-  if (!res.ok) throw new TranscribeError(res.status, await res.text())
+  if (!res.ok) throw new TranscribeError(res.status, await res.text(), 'gemini')
   return await res.json()
 }
 

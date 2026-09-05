@@ -234,7 +234,22 @@ export default function AudioUpload() {
         }
       }
 
-      await Promise.all(Array.from({ length: Math.min(3, ranges.length) }, worker))
+      /*
+        ⚠️ **제미나이는 한 줄로 보낸다** (2026-09-05).
+
+        여기서 보내는 조각은 5분짜리다. 제미나이는 **분당 들어오는 양**에
+        한도가 있어서(1만 토큰), 5분짜리를 셋씩 동시에 던지면 **첫 묶음부터
+        거절당한다.** 실제로 429 를 받았다.
+
+        OpenAI 쪽은 그 한도가 훨씬 넉넉해서 셋을 그대로 둔다 — 셋이면
+        1시간 회의가 3분의 1 시간에 끝난다. **줄일 이유가 없는 쪽까지
+        느리게 만들지 않는다.**
+
+        제미나이가 느린 대신 정확하다. 어느 쪽을 고를지는 사용자가 이미
+        모델을 고르면서 정한 것이라, 여기서 다시 묻지 않는다.
+      */
+      const lanes = model.startsWith('gemini') ? 1 : 3
+      await Promise.all(Array.from({ length: Math.min(lanes, ranges.length) }, worker))
 
       setStep(null)
       setDone(

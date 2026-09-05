@@ -61,6 +61,8 @@ export class TranscribeError extends Error {
   constructor(
     readonly status: number,
     readonly raw: string,
+    /** 어느 회사가 거절했나. 안내에 엉뚱한 회사 이름이 들어가지 않게 하려고 들고 다닌다 */
+    readonly provider: string = 'openai',
   ) {
     super(raw)
     this.name = 'TranscribeError'

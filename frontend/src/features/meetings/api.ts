@@ -85,8 +85,14 @@ export async function transcribeChunk(
 ): Promise<string> {
   const use = model || readTranscribeModel()
 
-  // 몰려서 거절당하는 것은 **기다리면 풀린다.** 두 번까지 스스로 다시 해 본다.
-  // 여기서 포기하면 그 토막 동안 한 말이 통째로 사라진다
+  /*
+    몰려서 거절당하는 것은 **기다리면 풀린다.** 두 번까지 스스로 다시 해 본다.
+    여기서 포기하면 그 토막 동안 한 말이 통째로 사라진다.
+
+    ⚠️ 아래는 **짐작한 시간**이다. 공급자가 「몇 초 뒤에 오라」고 말해 주면
+       그 말을 따른다 — 구글이 「46초 뒤」라고 한 적이 있는데, 짐작으로 4초·12초만
+       기다리고 포기했다 (2026-09-05).
+  */
   const waits = [4_000, 12_000]
 
   for (let attempt = 0; ; attempt++) {
@@ -105,21 +111,30 @@ export async function transcribeChunk(
 
     const failure = error ? await readFailure(error) : { error: String(data.error), retryable: false }
     if (failure.retryable && attempt < waits.length) {
-      await new Promise((r) => setTimeout(r, waits[attempt]))
+      // 공급자가 말해 준 시간이 있으면 그걸 따른다. 없으면 짐작한 시간
+      const wait = Math.max(failure.retryAfterMs ?? 0, waits[attempt])
+      await new Promise((r) => setTimeout(r, wait))
       continue
     }
     throw new Error(failure.error)
   }
 }
 
+type Failure = { error: string; retryable: boolean; retryAfterMs?: number }
+
 /** 함수가 돌려준 본문을 통째로 읽는다 — 「다시 해도 되는 실패인가」가 거기 들어 있다 */
-async function readFailure(error: unknown): Promise<{ error: string; retryable: boolean }> {
+async function readFailure(error: unknown): Promise<Failure> {
   const ctx = (error as { context?: Response }).context
   if (ctx && typeof ctx.json === 'function') {
     try {
       const body = await ctx.json()
       if (typeof body?.error === 'string') {
-        return { error: body.error, retryable: body.retryable === true }
+        return {
+          error: body.error,
+          retryable: body.retryable === true,
+          // 「몇 초 뒤에 오라」를 공급자가 말해 줬으면 그대로 받는다
+          retryAfterMs: typeof body.retryAfterMs === 'number' ? body.retryAfterMs : undefined,
+        }
       }
     } catch {
       // 본문을 못 읽으면 아래로

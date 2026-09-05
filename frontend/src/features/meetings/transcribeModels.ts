@@ -19,9 +19,14 @@ export type TranscribeModel = {
   id: string
   label: string
   vendor: 'OpenAI' | '구글'
-  /** 화면에 보여 줄 한 줄 설명 */
-  note: string
-  /** 1분당 요금 (달러). 견줄 때 쓰라고 적어 둔다 */
+  /**
+   * 1분당 요금 (달러).
+   *
+   * **화면에 보여 주는 값은 이것뿐이다** (2026-09-05, 사용자 판단).
+   * 모델마다 한 줄 설명을 달았더니 회의 시작 직전 화면이 설명으로 꽉 찼다.
+   * 요금은 **누를 때마다 달라지고 이 자리에서만 알 수 있는 값**이라 남겼다.
+   * 나머지 성격은 아래 주석과 운영 안내에 있다.
+   */
   perMinuteUsd: number
   /**
    * 토막마다 「말없음확률」을 주는가.
@@ -52,27 +57,40 @@ export type TranscribeModel = {
  *    `AI_TRANSCRIBE_MODELS` 로 잠근다 (운영 안내 참고).
  */
 export const TRANSCRIBE_MODELS: TranscribeModel[] = [
+  /**
+   * 2026-09-05 실측에서 **셋 중 가장 정확했고 가장 쌌다.** 사내 용어를
+   * 낱말 목록으로 넘겨 「타이벡」을 맞힌 유일한 모델이다.
+   *
+   * ⚠️ **분당 들어오는 양에 한도가 있다**(1만 토큰). 5분짜리 조각을 여러 개
+   *    동시에 던지면 거절당한다 — 그래서 녹음파일 올리기는 이 모델일 때
+   *    한 줄로 보낸다 (AudioUpload.tsx).
+   */
   {
     id: 'gemini-3.5-transcribe',
     label: '제미나이 받아쓰기',
     vendor: '구글',
-    note: '2026-09-05 실측에서 셋 중 가장 정확했고 가장 쌌습니다. 사내 용어를 낱말 목록으로 넘겨 「타이벡」을 유일하게 맞혔습니다.',
     perMinuteUsd: 0.0035,
     givesSpeechProb: false,
   },
+  /**
+   * OpenAI 의 최신 받아쓰기. 조용한 구간에서 없는 말을 지어내지 않았다.
+   * 다만 「타이벡」은 못 맞혔다 — 사내 용어를 한 줄 힌트로만 넘길 수 있어서다.
+   */
   {
     id: 'gpt-transcribe',
     label: 'GPT 받아쓰기',
     vendor: 'OpenAI',
-    note: 'OpenAI 의 최신 받아쓰기. 조용한 구간에서 없는 말을 지어내지 않았습니다(2026-09-05 실측). 다만 「타이벡」은 못 맞혔습니다.',
     perMinuteUsd: 0.0045,
     givesSpeechProb: false,
   },
+  /**
+   * 2026-09-05 까지 쓰던 것. **「말이 맞나」를 숫자로 알려 주는 유일한 모델**이라
+   * 새 모델이 이상할 때 돌아올 자리다. 목록에서 빼지 않는다.
+   */
   {
     id: 'whisper-1',
     label: 'Whisper',
     vendor: 'OpenAI',
-    note: '2026-09-05까지 쓰던 것. 「말이 맞나」를 숫자로 알려 주는 유일한 모델이라, 새 모델이 이상할 때 돌아올 자리입니다.',
     perMinuteUsd: 0.006,
     givesSpeechProb: true,
   },
