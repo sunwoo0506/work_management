@@ -6,6 +6,7 @@ import type { Source } from '../assistant/api'
 import type { GlossaryPair, Minutes } from '../../domain/transcript'
 import type { MinutesDoc } from '../../domain/minutes'
 import { keepSpoken } from '../../domain/hallucination'
+import { readTranscribeModel } from './transcribeModels'
 
 /**
  * 실시간 회의록이 밖과 주고받는 것.
@@ -69,9 +70,21 @@ export async function callMinutes(payload: {
  * 부르는 쪽마다 붙이면 **언젠가 한 곳을 빠뜨린다.** 실제로 그랬다.
  * 이제 받아쓰기를 부르는 길은 이 함수뿐이므로 **빠뜨릴 자리가 없다.**
  *
+ * ── ★ 어느 모델로 받아쓸지도 여기서 붙인다 ───────────────
+ * 부르는 쪽은 모델을 몰라도 된다. **안 넘기면 사용자가 화면에서 고른 값**을
+ * 여기서 읽어 붙인다 (transcribeModels.ts). 거르는 자리를 하나로 모은 것과
+ * 같은 이유다 — 네 길 중 한 곳에만 붙이면 나머지 세 길이 옛 모델로 돈다.
+ *
  * @param hint 이 회의에 나올 사내 용어. 미리 알려 주면 그 표기로 적힌다
+ * @param model 이번만 다른 모델로 받아쓰고 싶을 때. 안 주면 화면에서 고른 값
  */
-export async function transcribeChunk(blob: Blob, hint?: string): Promise<string> {
+export async function transcribeChunk(
+  blob: Blob,
+  hint?: string,
+  model?: string,
+): Promise<string> {
+  const use = model || readTranscribeModel()
+
   // 몰려서 거절당하는 것은 **기다리면 풀린다.** 두 번까지 스스로 다시 해 본다.
   // 여기서 포기하면 그 토막 동안 한 말이 통째로 사라진다
   const waits = [4_000, 12_000]
@@ -80,6 +93,7 @@ export async function transcribeChunk(blob: Blob, hint?: string): Promise<string
     const form = new FormData()
     form.append('file', blob, 'chunk')
     if (hint) form.append('hint', hint)
+    form.append('model', use)
 
     const { data, error } = await supabase.functions.invoke('transcribe', { body: form })
 

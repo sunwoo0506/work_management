@@ -14,6 +14,8 @@ import {
 import type { ActionItem, MinutesDoc } from '../../domain/minutes'
 import MinutesForm from './MinutesForm'
 import { useCompanyId } from '../companies/useCompany'
+import { TranscribeModelPicker } from './TranscribeModelPicker'
+import { readTranscribeModel, writeTranscribeModel } from './transcribeModels'
 import {
   callMinutes,
   deleteMeeting,
@@ -199,12 +201,20 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
     },
   })
 
+  /**
+   * 어느 모델로 다시 받아쓸까 (2026-09-05).
+   *
+   * **여기가 모델을 견주기에 제일 좋은 자리다.** 소리가 그대로 보관돼 있으니
+   * 같은 구간을 다른 모델로 다시 돌려 두 결과를 나란히 볼 수 있다.
+   */
+  const [model, setModel] = useState(readTranscribeModel)
+
   /** 소리 하나를 다시 받아쓴다. 성공하면 화면의 글에 곧바로 끼워 넣는다 */
   const redo = useMutation({
     mutationFn: async (row: MeetingAudio) => {
       const blob = await fetchMeetingAudio(row.path)
       const hint = (glossary ?? []).map((g) => g.term).join(', ').slice(0, 700)
-      const got = await transcribeChunk(blob, hint)
+      const got = await transcribeChunk(blob, hint, model)
       if (!got.trim()) {
         throw new Error('변환 결과가 비어 있습니다. 음성이 너무 작거나 잡음이 많을 수 있습니다.')
       }
@@ -347,6 +357,17 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
           <p className="text-caption text-ink-mute mt-1 leading-relaxed">
             「다시 변환」을 누르면 <strong className="font-semibold">전사문의 해당 시점에 삽입됩니다.</strong>
           </p>
+          {/* 같은 소리를 다른 모델로 다시 돌려 견줄 수 있다 */}
+          <div className="mt-3">
+            <TranscribeModelPicker
+              value={model}
+              disabled={redo.isPending}
+              onChange={(id) => {
+                setModel(id)
+                writeTranscribeModel(id)
+              }}
+            />
+          </div>
           <ul className="mt-2.5 space-y-2">
             {pendingAudio.map((a) => (
               <li key={a.id} className="flex flex-wrap items-center gap-2">

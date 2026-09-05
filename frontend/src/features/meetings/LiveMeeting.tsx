@@ -27,6 +27,8 @@ import {
   uploadMeetingAudio,
 } from './api'
 import { appendFinal } from '../../domain/transcript'
+import { TranscribeModelPicker } from './TranscribeModelPicker'
+import { findTranscribeModel, readTranscribeModel, writeTranscribeModel } from './transcribeModels'
 
 /**
  * 실시간 회의록 — 회의 중에 듣고, 끝나면 초안이 나와 있다.
@@ -153,6 +155,14 @@ export default function LiveMeeting() {
    * 밖으로도 안 나간다. 회의가 끝나면 내려받을 수 있고, 안 내려받으면 그냥 버려진다.
    */
   const [keepAudio, setKeepAudio] = useState(true)
+  /**
+   * 어느 모델로 받아쓸까 (2026-09-05).
+   *
+   * 이 브라우저에 적어 둔 값으로 시작한다 — 매번 다시 고르게 하면
+   * 「고를 수 있게 했다」가 오히려 손이 더 가는 일이 된다.
+   * ⚠️ 녹음(🎧) 길에서만 쓰인다. 브라우저(⚡) 받아쓰기는 서버를 안 거친다
+   */
+  const [model, setModel] = useState(readTranscribeModel)
   const [audio, setAudio] = useState<Blob | null>(null)
   /**
    * 저장할 때 소리도 서버에 함께 올릴까.
@@ -197,7 +207,7 @@ export default function LiveMeeting() {
       try {
         // 지어낸 말은 transcribeChunk 안에서 이미 걸러 나온다 —
         // 거르는 자리를 여기 두면 다른 세 길이 또 새어 나간다 (2026-08-19)
-        const got = await transcribeChunk(blob, termHint)
+        const got = await transcribeChunk(blob, termHint, model)
         if (got) setSegments((prev) => appendFinal(prev, got, atMs))
       } catch (e) {
         // 토막 하나가 실패해도 회의는 계속돼야 한다. 알리기만 하고 넘어간다.
@@ -209,7 +219,7 @@ export default function LiveMeeting() {
         setPending((n) => n - 1)
       }
     },
-    [termHint, setSegments],
+    [termHint, setSegments, model],
   )
   const recorder = useRecorder(handleChunk)
   /**
@@ -395,7 +405,7 @@ export default function LiveMeeting() {
     for (const item of failed) {
       setPending((n) => n + 1)
       try {
-        const got = await transcribeChunk(item.blob, termHint)
+        const got = await transcribeChunk(item.blob, termHint, model)
         if (got) setSegments((prev) => appendFinal(prev, got, item.at))
       } catch (e) {
         left.push(item)
@@ -597,6 +607,22 @@ export default function LiveMeeting() {
                   : `브라우저에 내장된 받아쓰기 기능을 사용합니다. 별도 비용이 없으며 발언과 동시에 문자로 표시됩니다. 현재 브라우저는 「${browser.name}」입니다.`}
               </p>
 
+              {/* ── 어느 모델로 받아쓸까 ────────────────────
+                  녹음(🎧) 길에서만 보인다. 브라우저(⚡) 받아쓰기는 서버를 안 거치므로
+                  고를 것이 없다. 회의 중에는 안 보인다 — 도중에 바꾸면 앞뒤 글이
+                  다른 모델로 적혀 왜 문체가 달라졌는지 알 수 없게 된다 */}
+              {recording && (
+                <div className="mt-3">
+                  <TranscribeModelPicker
+                    value={model}
+                    onChange={(id) => {
+                      setModel(id)
+                      writeTranscribeModel(id)
+                    }}
+                  />
+                </div>
+              )}
+
               {/* 받아쓰기가 「있는 척만」 하는 브라우저에서는 시작 전에 알린다 */}
               {!recording && !browser.speechOk && (
                 <p className="text-caption text-alert mt-1.5 leading-relaxed">
@@ -656,7 +682,12 @@ export default function LiveMeeting() {
               {clock(live.elapsedMs)}
             </span>
             {!idle && (
-              <span className="text-caption text-ink-mute whitespace-nowrap">{way}</span>
+              /* 회의 중에는 모델을 못 바꾸므로, 무엇으로 받아쓰는 중인지만 보여 준다.
+                 두 모델을 견주는 중에 「이번 건은 어느 쪽이었지」를 안 헷갈리려고 */
+              <span className="text-caption text-ink-mute whitespace-nowrap">
+                {way}
+                {recording && ` · ${findTranscribeModel(model)?.label ?? model}`}
+              </span>
             )}
             {stats.lines > 0 && (
               <span className="text-caption text-ink-mute whitespace-nowrap">

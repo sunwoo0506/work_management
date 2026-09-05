@@ -1,0 +1,81 @@
+/**
+ * 받아쓰기 어댑터 — 경계면.
+ *
+ * ── 왜 한 겹을 더 두나 ───────────────────────────────────
+ * 옆의 `provider/` 는 **글을 주고받는** AI(회의록 요약·챗봇)를 감싼다.
+ * 받아쓰기는 **소리를 보내는** 일이라 부르는 방식이 통째로 다르다 —
+ * OpenAI 는 파일 폼으로, 제미나이는 JSON 안에 소리를 실어 보낸다.
+ *
+ * 그 차이를 여기서 흡수한다. **화면은 모델 이름만 보내고, 무엇이 다른지 모른다.**
+ *
+ * ⚠️ 여기 들어오는 모델 이름은 **사용자가 화면에서 고른 값**이다.
+ *    코드에 박힌 목록이 아니라 그때그때 바뀐다 (CLAUDE.md — 모델명을 코드에 박지 않는다).
+ */
+
+/**
+ * 토막 하나에 붙는 「이게 정말 말이었나」 숫자들.
+ *
+ * ⚠️ **주는 모델과 안 주는 모델이 있다.** whisper-1 만 준다.
+ *    없으면 `null` 로 채워 보낸다 — 0 으로 두면 화면이 「확신한다」로 잘못 읽는다.
+ */
+export type TranscribeSegment = {
+  text: string
+  /** 이게 말이 아닐 확률 (0~1). 높으면 지어낸 것이다 */
+  noSpeechProb: number | null
+  /** 얼마나 확신하는가 (음수, 0 에 가까울수록 확신) */
+  avgLogprob: number | null
+  /** 같은 말을 되풀이하면 커진다 */
+  compressionRatio: number | null
+}
+
+export type TranscribeResult = {
+  text: string
+  /** 숫자를 못 받는 모델이면 빈 배열. 화면은 그때 낱말 목록으로만 거른다 */
+  segments: TranscribeSegment[]
+  /** 실제로 쓴 모델. 화면이 「무엇으로 받아썼는지」를 보여 주는 데 쓴다 */
+  model: string
+}
+
+export type TranscribeInput = {
+  file: File
+  /** 이 회의에 나올 사내 용어. 쉼표로 이어진 한 줄 */
+  hint: string
+  /** 사용자가 고른 모델 이름 */
+  model: string
+}
+
+export interface Transcriber {
+  /** 공급자 이름. 화면에 안 보이고 기록·오류 메시지에만 쓴다 */
+  readonly name: string
+  run(input: TranscribeInput): Promise<TranscribeResult>
+}
+
+/**
+ * 공급자가 거절했을 때.
+ *
+ * **숫자(status)와 원문을 그대로 들고 다닌다.** 여기서 우리말로 바꾸지 않는 이유는,
+ * 「기다리면 풀리는 실패인가」를 가리는 자리가 `failure.ts` 한 곳이기 때문이다.
+ * 여기서 미리 요약하면 그 판단에 필요한 단서가 지워진다 (2026-08-16 의 429 사건).
+ */
+export class TranscribeError extends Error {
+  constructor(
+    readonly status: number,
+    readonly raw: string,
+  ) {
+    super(raw)
+    this.name = 'TranscribeError'
+  }
+}
+
+/** 열쇠가 없을 때. 공급자 잘못이 아니라 **우리 설정 잘못**이라 따로 둔다 */
+export class MissingKeyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MissingKeyError'
+  }
+}
+
+/** 숫자가 아니면 null 로 — 없는 값을 0 으로 두면 「확신한다」로 잘못 읽힌다 */
+export function num(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
+}

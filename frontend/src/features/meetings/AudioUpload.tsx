@@ -12,6 +12,8 @@ import { CHUNK_SEC, decodeRisk, decodeToMono, makeChunk, readAudioMeta } from '.
 import type { AudioMeta, Decoded } from './decodeAudio'
 import { chunkRanges } from '../../domain/audio'
 import { clock } from '../../domain/transcript'
+import { TranscribeModelPicker } from './TranscribeModelPicker'
+import { readTranscribeModel, writeTranscribeModel } from './transcribeModels'
 
 /**
  * 녹음 파일을 올려 회의록으로 만든다.
@@ -71,6 +73,13 @@ export default function AudioUpload() {
   const [totalCount, setTotalCount] = useState(0)
   /** 마지막으로 받아쓴 글 한 토막. 글이 실제로 들어오는 것을 눈으로 본다 */
   const [lastText, setLastText] = useState('')
+  /**
+   * 어느 모델로 받아쓸까 (2026-09-05).
+   *
+   * 같은 녹음 파일을 두 모델로 돌려 견주는 자리다 — 여기가 그 견주기가
+   * 가장 쉬운 화면이다. 소리가 그대로 남아 있어 몇 번이든 다시 돌릴 수 있다.
+   */
+  const [model, setModel] = useState(readTranscribeModel)
   /** 사람이 멈추라고 했나. 지금 구간까지만 하고 멈춘다 */
   const stopRef = useRef(false)
 
@@ -197,7 +206,7 @@ export default function AudioUpload() {
           const atMs = Math.round(ranges[i].from * 1000)
 
           try {
-            const text = await transcribeChunk(blob, hint)
+            const text = await transcribeChunk(blob, hint, model)
             if (text.trim()) {
               got.set(atMs, text)
               setLastText(text.slice(-120))
@@ -372,6 +381,20 @@ export default function AudioUpload() {
                   <strong className="font-semibold">변환을 시작하면 비용이 발생합니다.</strong>
                 </p>
               </div>
+            )}
+
+            {/* ── 어느 모델로 받아쓸까 ────────────────────
+                변환을 시작하기 전에만 바꿀 수 있다. 도중에 바꾸면 앞 구간과
+                뒤 구간이 다른 모델로 적혀 한 회의록 안에서 문체가 갈린다 */}
+            {file && (
+              <TranscribeModelPicker
+                value={model}
+                disabled={busy}
+                onChange={(id) => {
+                  setModel(id)
+                  writeTranscribeModel(id)
+                }}
+              />
             )}
 
             <div className="flex flex-wrap items-center gap-2">
