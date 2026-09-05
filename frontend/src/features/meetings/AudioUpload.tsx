@@ -72,7 +72,21 @@ export default function AudioUpload() {
   const [doneCount, setDoneCount] = useState(0)
   const [totalCount, setTotalCount] = useState(0)
   /** 마지막으로 받아쓴 글 한 토막. 글이 실제로 들어오는 것을 눈으로 본다 */
-  const [lastText, setLastText] = useState('')
+  /**
+   * 지금까지 받아쓴 글 **전체**.
+   *
+   * ── 왜 전체를 들고 있나 (2026-09-05) ─────────────────────
+   * 그전에는 **마지막 120자만** 스쳐 지나가듯 보여 줬다. 그러니 화면에서는
+   * 「뭔가 도는 것 같긴 한데 제대로 읽고 있는 건지」를 알 수가 없었다.
+   * 부장님이 *"전사문 확인이 안 되다 보니 판독이 안 되고 있는 줄 알았다"* 고 하셨다.
+   *
+   * **글이 쌓이는 것을 보여 주는 게 「되고 있다」의 유일한 증거다.**
+   * 진행 막대는 「보냈다」는 증거일 뿐 「제대로 읽었다」는 증거가 아니다 —
+   * 실시간 회의록에서 이미 같은 이유로 토막 길이를 45초에서 15초로 줄였다(2026-08-19).
+   */
+  const [transcript, setTranscript] = useState('')
+  /** 글 상자를 아래로 따라 내리기 위한 손잡이 */
+  const textRef = useRef<HTMLDivElement>(null)
   /**
    * 어느 모델로 받아쓸까 (2026-09-05).
    *
@@ -107,8 +121,23 @@ export default function AudioUpload() {
     setPlace('')
     setMyNotes('')
     setSensitive(false)
+    setTranscript('')
     if (fileRef.current) fileRef.current.value = ''
   }
+
+  /**
+   * 글이 늘면 **아래로 따라 내린다.**
+   *
+   * ⚠️ 사용자가 위를 읽고 있으면 **건드리지 않는다.** 무조건 내리면
+   * 앞부분을 확인하려는 순간 화면이 아래로 튄다 — 읽을 수가 없다.
+   * 이미 바닥 근처에 있을 때만 따라간다.
+   */
+  useEffect(() => {
+    const el = textRef.current
+    if (!el) return
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    if (nearBottom) el.scrollTop = el.scrollHeight
+  }, [transcript])
 
   /**
    * 1단계 — 음성을 분석해 길이를 확정한다.
@@ -160,7 +189,7 @@ export default function AudioUpload() {
     stopRef.current = false
     setStartedAt(Date.now())
     setDoneCount(0)
-    setLastText('')
+    setTranscript('')
 
     try {
       const ranges = chunkRanges(decoded.durationSec, CHUNK_SEC)
@@ -209,12 +238,14 @@ export default function AudioUpload() {
             const text = await transcribeChunk(blob, hint, model)
             if (text.trim()) {
               got.set(atMs, text)
-              setLastText(text.slice(-120))
               // 구간을 받을 때마다 저장한다 — 중간에 끊겨도 그때까지가 남는다
               let merged = ''
               for (const at of [...got.keys()].sort((a, b) => a - b)) {
                 merged = mergeIntoTranscript(merged, at, got.get(at) as string)
               }
+              // 화면에도 같은 글을 넘긴다. **저장한 것과 보여 주는 것이 같아야 한다** —
+              // 다르면 「화면엔 있는데 회의록엔 없다」가 생기고 원인을 못 찾는다
+              setTranscript(merged)
               await updateMeeting(meeting.id, { transcript: merged })
             }
           } catch (e) {
@@ -484,11 +515,15 @@ export default function AudioUpload() {
         {/* ── ③ 진행 상황 ───────────────────────────── */}
         <Card title="변환 진행">
           {!busy ? (
-            <p className="text-caption text-ink-mute leading-relaxed">
-              {decoded
-                ? '「변환 시작」을 누르면 이곳에 진행 상황이 표시됩니다.'
-                : '파일을 고르고 「진행하기」를 누르면 이곳에 진행 상황이 표시됩니다.'}
-            </p>
+            /* 끝난 뒤에는 안내를 안 띄운다 — 아래에 받아쓴 글이 있는데
+               「누르면 표시됩니다」가 위에 남아 있으면 아직 안 한 것처럼 보인다 */
+            transcript ? null : (
+              <p className="text-caption text-ink-mute leading-relaxed">
+                {decoded
+                  ? '「변환 시작」을 누르면 이곳에 진행 상황이 표시됩니다.'
+                  : '파일을 고르고 「진행하기」를 누르면 이곳에 진행 상황이 표시됩니다.'}
+              </p>
+            )
           ) : (
             <div>
               <div className="h-2 w-full bg-parchment rounded-full overflow-hidden">
@@ -522,11 +557,6 @@ export default function AudioUpload() {
                     {step ?? '처리 중…'} · 경과 {clock(elapsedMs)}
                   </p>
                 )}
-                {lastText && (
-                  <p className="text-ink-mute mt-1.5">
-                    최근 변환 내용: <span className="text-ink-soft">…{lastText}</span>
-                  </p>
-                )}
               </div>
 
               <PillButton
@@ -540,6 +570,35 @@ export default function AudioUpload() {
               >
                 중지
               </PillButton>
+            </div>
+          )}
+
+          {/* ── 지금까지 받아쓴 글 ─────────────────────
+              ★ **여기가 「되고 있다」의 유일한 증거다.**
+              진행 막대는 「보냈다」는 증거일 뿐 「제대로 읽었다」는 증거가 아니다.
+              변환이 끝난 뒤에도 남겨 둔다 — 회의록으로 넘어가지 않고 여기서
+              바로 확인하실 수 있어야 한다 */}
+          {transcript && (
+            <div className="mt-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-caption text-ink-soft font-semibold">받아쓴 글</p>
+                <p className="text-caption text-ink-mute tabular-nums">
+                  {transcript.length.toLocaleString()}자
+                </p>
+              </div>
+              <div
+                ref={textRef}
+                className="mt-1.5 max-h-[320px] overflow-y-auto bg-parchment rounded-md px-3.5 py-3"
+              >
+                <p className="text-caption text-ink-soft leading-relaxed whitespace-pre-wrap break-words">
+                  {transcript}
+                </p>
+              </div>
+              <p className="text-caption text-ink-mute mt-1.5 leading-relaxed">
+                {busy
+                  ? '구간을 받을 때마다 이어 붙습니다. 사람 이름·사내 용어가 틀렸으면 변환이 끝난 뒤 회의록에서 고치시면 됩니다.'
+                  : '이 글은 회의록에 저장돼 있습니다. 「기록 › 회의록」에서 고치실 수 있습니다.'}
+              </p>
             </div>
           )}
 
