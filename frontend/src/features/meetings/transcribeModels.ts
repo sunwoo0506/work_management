@@ -53,22 +53,6 @@ export type TranscribeModel = {
  */
 export const TRANSCRIBE_MODELS: TranscribeModel[] = [
   {
-    id: 'whisper-1',
-    label: 'Whisper',
-    vendor: 'OpenAI',
-    note: '지금까지 쓰던 것. 「말이 맞나」를 숫자로 알려 줍니다. 다만 조용한 구간에서 없는 말을 지어내는 것도 이 모델입니다 — 그 숫자로 걸러 냅니다.',
-    perMinuteUsd: 0.006,
-    givesSpeechProb: true,
-  },
-  {
-    id: 'gpt-transcribe',
-    label: 'GPT 받아쓰기',
-    vendor: 'OpenAI',
-    note: 'OpenAI 의 최신 받아쓰기. 값이 더 싸고, 조용한 구간에서 없는 말을 지어내지 않았습니다(2026-09-05 실측).',
-    perMinuteUsd: 0.0045,
-    givesSpeechProb: false,
-  },
-  {
     id: 'gemini-3.5-transcribe',
     label: '제미나이 받아쓰기',
     vendor: '구글',
@@ -76,15 +60,41 @@ export const TRANSCRIBE_MODELS: TranscribeModel[] = [
     perMinuteUsd: 0.0035,
     givesSpeechProb: false,
   },
+  {
+    id: 'gpt-transcribe',
+    label: 'GPT 받아쓰기',
+    vendor: 'OpenAI',
+    note: 'OpenAI 의 최신 받아쓰기. 조용한 구간에서 없는 말을 지어내지 않았습니다(2026-09-05 실측). 다만 「타이벡」은 못 맞혔습니다.',
+    perMinuteUsd: 0.0045,
+    givesSpeechProb: false,
+  },
+  {
+    id: 'whisper-1',
+    label: 'Whisper',
+    vendor: 'OpenAI',
+    note: '2026-09-05까지 쓰던 것. 「말이 맞나」를 숫자로 알려 주는 유일한 모델이라, 새 모델이 이상할 때 돌아올 자리입니다.',
+    perMinuteUsd: 0.006,
+    givesSpeechProb: true,
+  },
 ]
 
 /**
  * 아무것도 고르지 않았을 때 쓸 것.
  *
- * whisper-1 을 그대로 둔다 — **지금까지 돌던 것이 바뀌면 안 되기 때문이다.**
- * 모델을 바꾸는 일은 사용자가 직접 눌러서 일어나야 한다.
+ * ── ⚠️ 2026-09-05 에 whisper-1 에서 바꿨다 ───────────────
+ * **사용자가 정한 것이다.** 셋을 같은 소리로 재 보고 나서 바꿨다 —
+ *
+ *   정확도  제미나이만 「타이벡」을 맞혔다. 나머지 둘은 「타이백 자택」
+ *   요금    분당 $0.0035 로 셋 중 제일 싸다 (whisper 는 $0.006)
+ *   무음    빈 글을 냈다. 지어낸 쪽은 오히려 whisper 였다
+ *
+ * ⚠️ **바꾸는 것은 늘 의식적인 결정이어야 한다.** 시험이 이 값을 못 박아 둬서,
+ *    여기를 고치면 시험이 깨진다. 그게 목적이다 — 「어쩌다 바뀌는 일」을 막는다.
+ *
+ * ⚠️ **아직 안 잰 것이 있다.** 폰 녹음 형식(webm)·여러 사람이 겹쳐 말하는
+ *    진짜 회의 소리. 이상하면 화면에서 **Whisper** 를 누르면 그전으로 돌아간다.
  */
-export const DEFAULT_TRANSCRIBE_MODEL = 'whisper-1'
+export const DEFAULT_TRANSCRIBE_MODEL = 'gemini-3.5-transcribe'
 
 /**
  * 고른 값을 이 브라우저에 적어 둔다.

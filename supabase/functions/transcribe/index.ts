@@ -46,10 +46,15 @@ const json = (body: unknown, status = 200) =>
  * 코드에 박지 않는다 (CLAUDE.md). 아래는 환경변수도 없을 때의 마지막 값이다.
  * 바꾸려면 `npx supabase secrets set AI_MODEL_TRANSCRIBE=<모델명>`.
  *
- * ⚠️ whisper-1 을 남겨 둔 이유가 있다 — **토막마다 「말없음확률」을 주는 유일한 모델**이라
- *    지어낸 말을 거르는 그물이 가장 촘촘하다. 아무 말 없이 도는 자리에는 이게 맞다.
+ * ⚠️ **화면 쪽 기본값과 같아야 한다** (transcribeModels.ts).
+ *    여기가 쓰이는 경우는 **옛 화면이 열려 있는 창**뿐인데, 두 값이 다르면
+ *    같은 사람이 창에 따라 다른 모델로 받아쓰게 된다. 왜 문체가 다른지
+ *    알아낼 방법이 없다.
+ *
+ * 2026-09-05 — 사용자 판단으로 whisper-1 에서 바꿨다. 셋을 같은 소리로 재 보니
+ * 정확도·요금·무음에서 모두 제미나이가 앞섰다 (설계서 §5.8ⓑ).
  */
-const DEFAULT_TRANSCRIBE_MODEL = 'whisper-1'
+const DEFAULT_TRANSCRIBE_MODEL = 'gemini-3.5-transcribe'
 
 /** 토막 하나의 상한. 이보다 크면 받지 않는다 — 요금과 시간이 튄다 */
 const MAX_BYTES = 20 * 1024 * 1024
