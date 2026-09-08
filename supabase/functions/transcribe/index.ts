@@ -76,10 +76,19 @@ Deno.serve(async (req) => {
     if (!userData?.user) return json({ error: '로그인 정보를 확인하지 못했습니다.' }, 401)
 
     const form = await req.formData().catch(() => null)
+
+    /*
+      ★ 아까 맡긴 일을 **다시 물어보는** 요청일 수 있다 (2026-09-08).
+      그때는 소리가 안 온다 — 저쪽이 이미 들고 있다. 그래서 파일 검사보다 먼저 본다.
+    */
+    const jobId = String(form?.get('jobId') ?? '').trim()
+
     const file = form?.get('file')
-    if (!(file instanceof File)) return json({ error: '녹음 토막이 없습니다.' }, 400)
-    if (file.size === 0) return json({ text: '' })
-    if (file.size > MAX_BYTES) return json({ error: '녹음 토막이 너무 큽니다.' }, 413)
+    if (!jobId) {
+      if (!(file instanceof File)) return json({ error: '녹음 토막이 없습니다.' }, 400)
+      if (file.size === 0) return json({ text: '' })
+      if (file.size > MAX_BYTES) return json({ error: '녹음 토막이 너무 큽니다.' }, 413)
+    }
 
     /**
      * 사내 용어를 미리 알려 준다.
@@ -136,17 +145,30 @@ Deno.serve(async (req) => {
     */
     let result
     try {
-      result = await transcriber.run({ file, hint, model, diarize })
+      result = await transcriber.run({ file: file as File, hint, model, diarize, jobId })
     } catch (e) {
-      await recordUsage(db, userData.user.id, {
-        feature: '전사',
-        model,
-        audioSec: seconds,
-        ok: false,
-      })
+      if (!jobId) {
+        await recordUsage(db, userData.user.id, {
+          feature: '전사',
+          model,
+          audioSec: seconds,
+          ok: false,
+        })
+      }
       throw e
     }
-    await recordUsage(db, userData.user.id, { feature: '전사', model, audioSec: seconds })
+    /*
+      ★ **맡길 때 한 번만 센다.**
+
+      화면이 「다 됐나요」를 여러 번 물어보는데, 물어볼 때마다 세면
+      한 회의가 열 번 쓴 것처럼 보인다. 그렇다고 「끝났을 때」 세면
+      길이(seconds)를 다시 안 보내 주므로 값이 빈다.
+
+      돈이 나가는 자리는 **맡기는 순간**이므로 거기서 센다.
+    */
+    if (!jobId) {
+      await recordUsage(db, userData.user.id, { feature: '전사', model, audioSec: seconds })
+    }
 
     /*
       토막마다의 확신도를 **그대로 넘긴다.** 무엇을 버릴지는 화면이 정한다.

@@ -265,6 +265,7 @@ export async function transcribeChunk(
   model?: string,
   seconds?: number,
   diarize?: boolean,
+  onWait?: (sec: number) => void,
 ): Promise<string> {
   const use = model || readTranscribeModel()
 
@@ -289,6 +290,17 @@ export async function transcribeChunk(
     const { data, error } = await supabase.functions.invoke('transcribe', { body: form })
 
     if (!error && !data?.error) {
+      /*
+        ★ 아직 받아쓰는 중이면 **번호를 받아 다시 물어본다** (2026-09-08).
+
+        30분짜리를 통째로 보내면 몇 분이 걸린다. 서버 함수가 붙잡고 기다리면
+        함수가 먼저 끊겨 그 일이 통째로 사라진다. 그래서 맡겨 놓고 **여기서**
+        물어본다 — 브라우저는 오래 기다려도 되기 때문이다.
+      */
+      if (data?.pending && data?.jobId) {
+        const text = await waitForJob(String(data.jobId), use, diarize, onWait)
+        return keepSpoken(text, null)
+      }
       // 확신도가 낮은 토막을 떨어내고 남은 글만 돌려준다.
       // 서버가 숫자를 안 주면(옛 판) 낱말 목록으로만 거른다
       return keepSpoken(String(data?.text ?? ''), data?.segments ?? null)
@@ -302,6 +314,59 @@ export async function transcribeChunk(
       continue
     }
     throw new Error(failure.error)
+  }
+}
+
+/**
+ * 맡겨 둔 받아쓰기가 끝날 때까지 **여기서** 기다린다 (2026-09-08).
+ *
+ * ── 왜 브라우저가 기다리나 ───────────────────────────────
+ * 30분짜리 회의를 통째로 보내면 받아쓰는 데 몇 분이 걸린다. 서버 함수는
+ * 그렇게 오래 못 버틴다 — 붙잡고 있으면 함수가 먼저 끊기고 그 일이
+ * 통째로 사라진다. **브라우저는 오래 기다려도 된다.**
+ *
+ * 처음엔 자주 묻고 점점 뜸하게 묻는다. 짧은 회의는 금방 끝나고,
+ * 긴 회의는 어차피 오래 걸리므로 자주 물어야 소용이 없다.
+ *
+ * @param onWait 얼마나 기다렸는지 화면에 알려 준다 — 아무 말이 없으면 멈춘 줄 안다
+ */
+async function waitForJob(
+  jobId: string,
+  model: string,
+  diarize?: boolean,
+  onWait?: (sec: number) => void,
+): Promise<string> {
+  /** 최대 12분까지 기다린다. 30분짜리 회의도 이 안에 끝난다 */
+  const DEADLINE_MS = 12 * 60 * 1000
+  const began = Date.now()
+  let wait = 3_000
+
+  for (;;) {
+    await new Promise((r) => setTimeout(r, wait))
+    // 3초 → 5초 → 8초 … 20초에서 멈춘다
+    wait = Math.min(Math.round(wait * 1.4), 20_000)
+
+    const elapsed = Date.now() - began
+    onWait?.(Math.round(elapsed / 1000))
+
+    const form = new FormData()
+    form.append('jobId', jobId)
+    form.append('model', model)
+    if (diarize) form.append('diarize', '1')
+
+    const { data, error } = await supabase.functions.invoke('transcribe', { body: form })
+    if (error) {
+      const detail = await readFailure(error)
+      throw new Error(detail.error)
+    }
+    if (data?.error) throw new Error(String(data.error))
+    if (!data?.pending) return String(data?.text ?? '')
+
+    if (elapsed > DEADLINE_MS) {
+      throw new Error(
+        '받아쓰기가 너무 오래 걸립니다. 녹음을 더 짧게 나눠 올려 주세요.',
+      )
+    }
   }
 }
 

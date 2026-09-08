@@ -30,8 +30,11 @@ const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions'
  * 소리를 글자로 바꿔 넣으면 (base64) **크기가 1.33배로 분다.** 제미나이 쪽
  * 한 번 요청의 한도가 20MB 라서, 원본은 14MB 를 넘으면 안 된다.
  *
- * 실제로는 걸릴 일이 없다 — 실시간 회의는 15초 토막(수십 KB)이고,
- * 녹음 파일 올리기도 5분씩 잘라 보내 9.6MB 다. **넘으면 그렇다고 말해 준다.**
+ * 실시간 회의는 15초 토막(수십 KB)이고, 잘라 보내는 녹음도 5분에 9.6MB 라
+ * 여기 걸릴 일이 없다.
+ *
+ * **넘으면 파일 창고를 거친다**(upload). 화자 구분을 켜고 30분짜리를 통째로
+ * 보낼 때가 그렇다 — 잘라 보내면 조각마다 화자 번호가 새로 매겨지기 때문이다.
  */
 const MAX_INLINE_BYTES = 14 * 1024 * 1024
 
@@ -43,7 +46,7 @@ export function createGeminiTranscriber(): Transcriber {
   return {
     name: 'gemini',
 
-    async run({ file, hint, model, diarize }: TranscribeInput): Promise<TranscribeResult> {
+    async run({ file, hint, model, diarize, jobId }: TranscribeInput): Promise<TranscribeResult> {
       const key = Deno.env.get('GEMINI_API_KEY')
       if (!key) {
         throw new MissingKeyError(
@@ -53,23 +56,35 @@ export function createGeminiTranscriber(): Transcriber {
         )
       }
 
-      if (file.size > MAX_INLINE_BYTES) {
-        throw new MissingKeyError(
-          '이 소리 조각은 제미나이로 한 번에 보내기엔 큽니다. 받아쓰기 모델을 whisper-1 로 바꿔 주세요.',
-        )
+      /*
+        ★ 아까 맡긴 일을 다시 물어보는 것이면 소리를 안 보낸다 (2026-09-08).
+        저쪽이 이미 들고 있다. 30분짜리는 몇 분 걸리므로 화면이 나눠서 물어본다.
+      */
+      if (jobId) {
+        const got = await reread(key, jobId)
+        if (pending(got)) return { text: '', segments: [], model, pending: true, jobId }
+        const text = diarize ? bySpeaker(got) || readText(got) : readText(got)
+        return { text, segments: [], model }
       }
 
-      const bytes = new Uint8Array(await file.arrayBuffer())
+      /*
+        ★ 큰 파일은 **먼저 올려 두고 주소로 넘긴다** (2026-09-08).
+
+        소리를 JSON 안에 글자로 실으면 크기가 1.33배로 불어 20MB 한도에 걸린다.
+        30분짜리는 그 방식으로 못 보낸다. 그래서 파일 창고에 먼저 올리고
+        **주소만** 넘긴다. 창고는 48시간 뒤 알아서 지운다.
+      */
+      const input = file.size > MAX_INLINE_BYTES
+        ? { type: 'audio', uri: await upload(key, file), mime_type: mimeType(file) }
+        : {
+            type: 'audio',
+            data: encodeBase64(new Uint8Array(await file.arrayBuffer())),
+            mime_type: mimeType(file),
+          }
 
       const body: Record<string, unknown> = {
         model,
-        input: [
-          {
-            type: 'audio',
-            data: encodeBase64(bytes),
-            mime_type: mimeType(file),
-          },
-        ],
+        input: [input],
         generation_config: {
           transcription_config: {
             // 한국어로 못 박는다. 비워 두면 알아서 찾지만, 짧은 토막에서
@@ -105,10 +120,20 @@ export function createGeminiTranscriber(): Transcriber {
       let json = await res.json()
 
       // 바로 끝나지 않으면 몇 번 더 물어본다. 여기서 포기하면 그 토막이 통째로 사라진다
+      const id = String(json?.id ?? '')
       for (let i = 0; i < POLL_TRIES && pending(json); i++) {
         await new Promise((r) => setTimeout(r, POLL_WAIT_MS))
-        json = await reread(key, String(json?.id ?? ''))
+        json = await reread(key, id)
         if (!json) break
+      }
+
+      /*
+        여기까지 기다렸는데도 안 끝났으면 **붙잡고 있지 않는다.**
+        서버 함수가 먼저 끊기면 그 일이 통째로 사라진다.
+        번호를 돌려주면 화면이 이어서 물어본다.
+      */
+      if (pending(json) && id) {
+        return { text: '', segments: [], model, pending: true, jobId: id }
       }
 
       /*
@@ -120,6 +145,60 @@ export function createGeminiTranscriber(): Transcriber {
       return { text, segments: [], model }
     },
   }
+}
+
+/**
+ * 큰 소리 파일을 **파일 창고에 먼저 올리고 주소를 받아 온다** (2026-09-08).
+ *
+ * ── 왜 필요한가 ──────────────────────────────────────────
+ * 소리를 JSON 에 글자로 실어 보내는 방식은 20MB 에서 막힌다. 30분짜리
+ * 회의는 그걸 넘는다. 그런데 **화자 구분은 통째로 보내야 쓸모가 있다** —
+ * 잘라 보내면 조각마다 화자 번호가 새로 매겨져 누가 누군지 이어지지 않는다.
+ *
+ * 그래서 큰 파일은 창고에 올리고 **주소만** 넘긴다. 파일은 2GB 까지 되고
+ * **48시간 뒤 저쪽이 알아서 지운다** — 우리가 치울 것이 없다.
+ *
+ * ⚠️ 올리는 절차가 두 걸음이다. 먼저 「이만한 걸 올리겠다」고 알리면
+ *    올릴 주소를 알려 주고, 거기에 실제 내용을 보낸다.
+ */
+async function upload(key: string, file: File): Promise<string> {
+  const start = await fetch(
+    'https://generativelanguage.googleapis.com/upload/v1beta/files',
+    {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': key,
+        'X-Goog-Upload-Protocol': 'resumable',
+        'X-Goog-Upload-Command': 'start',
+        'X-Goog-Upload-Header-Content-Length': String(file.size),
+        'X-Goog-Upload-Header-Content-Type': mimeType(file),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ file: { display_name: 'meeting-audio' } }),
+    },
+  )
+  if (!start.ok) throw new TranscribeError(start.status, await start.text(), 'gemini')
+
+  const where = start.headers.get('x-goog-upload-url')
+  if (!where) {
+    throw new TranscribeError(502, '파일 올릴 자리를 받지 못했습니다.', 'gemini')
+  }
+
+  const done = await fetch(where, {
+    method: 'POST',
+    headers: {
+      'Content-Length': String(file.size),
+      'X-Goog-Upload-Offset': '0',
+      'X-Goog-Upload-Command': 'upload, finalize',
+    },
+    body: file,
+  })
+  if (!done.ok) throw new TranscribeError(done.status, await done.text(), 'gemini')
+
+  const json = await done.json()
+  const uri = String(json?.file?.uri ?? '')
+  if (!uri) throw new TranscribeError(502, '올린 파일의 주소를 받지 못했습니다.', 'gemini')
+  return uri
 }
 
 /** 아직 받아쓰는 중인가 */

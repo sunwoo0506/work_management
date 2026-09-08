@@ -16,6 +16,15 @@ import { TranscribeModelPicker } from './TranscribeModelPicker'
 import { readTranscribeModel, writeTranscribeModel } from './transcribeModels'
 
 /**
+ * 화자 구분을 켰을 때 **자르지 않고 통째로 보낼 수 있는 길이** (2026-09-08).
+ *
+ * 공급자 제약이다 — 화자 구분을 켜면 30분까지만 받는다. 그냥 받아쓰기는 1시간.
+ * 이 안에 들면 **화자 번호가 회의 끝까지 이어진다.** 넘으면 예전처럼 잘라
+ * 보내고, 그때는 조각마다 번호가 새로 매겨진다.
+ */
+const WHOLE_MAX_SEC = 30 * 60
+
+/**
  * 녹음 파일을 올려 회의록으로 만든다.
  *
  * ── 왜 필요한가 ──────────────────────────────────────────
@@ -51,6 +60,8 @@ export default function AudioUpload() {
    * 「제가 하겠습니다」의 「제가」가 누구인지 글만 봐서는 모른다.
    */
   const [diarize, setDiarize] = useState(true)
+  /** 통째로 보냈을 때 몇 초째 기다리는 중인가. 아무 말이 없으면 멈춘 줄 안다 */
+  const [waited, setWaited] = useState(0)
 
   /** 회의 중 직접 적은 메모. 전사문과 섞지 않는다 */
   const [myNotes, setMyNotes] = useState('')
@@ -205,7 +216,25 @@ export default function AudioUpload() {
     setTranscript('')
 
     try {
-      const ranges = chunkRanges(decoded.durationSec, CHUNK_SEC)
+      /*
+        ★ 화자 구분을 켰고 30분 이하면 **자르지 않고 통째로 보낸다** (2026-09-08).
+
+        ── 왜 ────────────────────────────────────────────────
+        잘라 보내면 **조각마다 화자 번호가 새로 매겨진다.** 3조각의 「화자1」과
+        4조각의 「화자1」이 같은 사람이라는 보장이 없다. 통째로 보내면 저쪽이
+        회의 전체를 한 번에 듣고 매기므로 **번호가 끝까지 이어진다.**
+
+        30분이 한도인 이유는 공급자 제약이다 — 화자 구분을 켜면 30분까지만
+        받는다(그냥 받아쓰기는 1시간). 그보다 길면 예전처럼 잘라 보낸다.
+
+        ⚠️ 통째로 보낼 때는 **풀어 놓은 소리(wav)가 아니라 원본 파일**을 보낸다.
+           wav 는 30분이면 50MB 가 넘는다. 원본은 압축돼 있어 훨씬 작다.
+      */
+      const whole = diarize && canDiarize && decoded.durationSec <= WHOLE_MAX_SEC
+
+      const ranges = whole
+        ? [{ from: 0, to: decoded.durationSec }]
+        : chunkRanges(decoded.durationSec, CHUNK_SEC)
       if (ranges.length === 0) throw new Error('소리가 들어 있지 않은 파일입니다.')
       setTotalCount(ranges.length)
 
@@ -244,7 +273,7 @@ export default function AudioUpload() {
           if (i >= ranges.length || stopRef.current) return
 
           // 구간은 보낼 때 만들고 보내고 나면 버린다 — 다 만들어 두면 메모리가 쌓인다
-          const blob = makeChunk(decoded, ranges[i].from, ranges[i].to)
+          const blob = whole ? file : makeChunk(decoded, ranges[i].from, ranges[i].to)
           const atMs = Math.round(ranges[i].from * 1000)
 
           try {
@@ -255,6 +284,8 @@ export default function AudioUpload() {
               model,
               ranges[i].to - ranges[i].from,
               diarize && canDiarize,
+              // 통째로 보내면 몇 분 걸린다. 아무 말이 없으면 멈춘 줄 안다
+              whole ? (sec) => setWaited(sec) : undefined,
             )
             if (text.trim()) {
               got.set(atMs, text)
@@ -561,7 +592,23 @@ export default function AudioUpload() {
 
               {/* 경과 시간이 매초 올라가는 것 자체가 「진행 중」이라는 증거다 */}
               <div className="mt-2 text-caption text-ink-soft leading-relaxed">
-                {totalCount > 0 ? (
+                {/*
+                  통째로 보낸 경우는 「구간」이 하나뿐이라 진행률이 0%에서 100%로
+                  건너뛴다. 그동안 아무 말이 없으면 멈춘 줄 아니까 **기다린 시간**을
+                  대신 보여 준다 — 올라가는 숫자 자체가 「돌고 있다」는 증거다.
+                */}
+                {waited > 0 ? (
+                  <>
+                    <p>
+                      <strong className="font-semibold">회의 전체를 한 번에 받아쓰는 중</strong>{' '}
+                      · 경과 {clock(elapsedMs)}
+                    </p>
+                    <p className="text-ink-mute">
+                      화자 구분을 켜면 회의를 통째로 보냅니다. 30분 분량이면 몇 분 걸립니다.
+                      {waited > 240 && ' 조금만 더 기다려 주세요.'}
+                    </p>
+                  </>
+                ) : totalCount > 0 ? (
                   <>
                     <p>
                       <strong className="font-semibold">
@@ -672,18 +719,31 @@ export default function AudioUpload() {
               <span className={canDiarize ? '' : 'text-ink-mute'}>
                 화자 구분 받아쓰기
                 <span className="block text-caption text-ink-mute leading-relaxed mt-0.5">
-                  {canDiarize ? (
+                  {!canDiarize ? (
+                    <>이 기능은 제미나이에서만 됩니다. 위에서 받아쓰기 모델을 바꿔 주세요.</>
+                  ) : !meta || !meta.ok || meta.durationSec <= WHOLE_MAX_SEC ? (
                     <>
                       「화자1: …」처럼 말한 사람별로 줄이 나뉩니다.{' '}
                       <strong className="font-semibold">
-                        번호는 구간(5분)마다 새로 매겨집니다
+                        30분 이하는 자르지 않고 통째로 보내므로 화자 번호가 끝까지
+                        이어집니다.
                       </strong>{' '}
-                      — 3구간의 화자1과 4구간의 화자1이 같은 사람이라는 보장은 없습니다.
-                      회의록을 만들 때 참석자 목록과 대조해 AI 가 추정하고, 확신이 없으면
-                      「확인 필요」에 적습니다.
+                      대신 한 번에 몇 분이 걸립니다.
                     </>
                   ) : (
-                    <>이 기능은 제미나이에서만 됩니다. 위에서 받아쓰기 모델을 바꿔 주세요.</>
+                    <>
+                      「화자1: …」처럼 말한 사람별로 줄이 나뉩니다.{' '}
+                      <strong className="font-semibold text-alert">
+                        이 녹음은 30분이 넘어 5분씩 잘라 보냅니다 — 번호가 구간마다
+                        새로 매겨집니다.
+                      </strong>{' '}
+                      3구간의 화자1과 4구간의 화자1이 같은 사람이라는 보장이 없습니다.
+                      회의록을 만들 때 참석자 목록과 대조해 AI 가 추정하고, 확신이
+                      없으면 「확인 필요」에 적습니다.{' '}
+                      <strong className="font-semibold">
+                        30분 이하로 나눠 녹음하시면 이 문제가 없습니다.
+                      </strong>
+                    </>
                   )}
                 </span>
               </span>
