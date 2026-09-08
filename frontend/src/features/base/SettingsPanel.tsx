@@ -9,16 +9,45 @@ import PasswordCard from '../auth/PasswordCard'
 import AiUsageCard from './AiUsageCard'
 
 /**
- * 설정 — 업체별 키-값.
+ * 업체별 키-값을 고치는 자리.
  *
  * 테이블을 따로 만들 만큼은 아닌 것들이 여기 모인다.
  *   areas    업무영역 목록 — 업무·리포트의 「영역」 선택지
- *   glossary 사내 용어집 — 3단계에서 AI 가 문서를 쓸 때 참고한다
+ *   glossary 사내 용어집 — AI 가 문서를 쓸 때 참고한다
  *
  * 용어집을 지금 만들어 두는 이유 — AI 를 붙일 때 만들면 늦다.
  * 그때 채우려면 6개월치를 한 번에 떠올려야 한다. 지금부터 쌓아 둔다.
+ *
+ * ── ★ 두 갈래로 나뉘어 그려진다 (2026-09-08) ────────────
+ * 부장님 판단이다. 「업무영역」과 「사내 용어집」은 **설정이 아니라 기준**이다 —
+ * 회사가 업무를 어떻게 나누는지, 우리 회사 말이 무엇인지는 **바뀌지 않는 것**이고
+ * 일하다가 들춰 본다. 반면 AI 사용량·로그인은 **툴을 손보는 것**이다.
+ *
+ *   `<StandardsPanel />`  업무영역 · 사내 용어집   → 기준 탭
+ *   `<SettingsPanel />`   AI 사용량 · 로그인       → 설정 탭
+ *
+ * 저장하는 코드는 하나뿐이라 두 벌로 갈라지지 않는다.
  */
 export default function SettingsPanel() {
+  return (
+    <div className="space-y-5">
+      {/*
+        AI 사용량과 로그인만 남는다 — 둘 다 **툴을 손보는 것**이고
+        회사별 설정이 아니라 내 계정의 것이다.
+      */}
+      <AiUsageCard />
+      <PasswordCard />
+    </div>
+  )
+}
+
+/**
+ * 기준 탭에 그려지는 칸 — **업무영역과 사내 용어집.**
+ *
+ * 회사가 업무를 어떻게 나누는지, 우리 회사 말이 무엇인지는 **바뀌지 않는 것**이고
+ * 일하다가 들춰 본다. 그래서 설정이 아니라 기준이다 (부장님 판단, 2026-09-08).
+ */
+export function StandardsPanel() {
   const companyId = useCompanyId()
   const qc = useQueryClient()
 
@@ -81,15 +110,6 @@ export default function SettingsPanel() {
           onChange={(next) => save.mutate({ key: 'glossary', value: next })}
         />
       </Card>
-
-      {/*
-        AI 사용량도 회사별 설정이 아니라 **내 계정**의 것이다.
-        고치는 칸(업무영역·용어집) 뒤, 보기만 하는 칸으로 둔다.
-      */}
-      <AiUsageCard />
-
-      {/* 로그인 방법은 회사별 설정이 아니라 **내 계정**의 것이라 맨 아래에 둔다 */}
-      <PasswordCard />
     </div>
   )
 }

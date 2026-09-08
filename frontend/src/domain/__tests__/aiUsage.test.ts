@@ -4,7 +4,7 @@ import type { UsageRow } from '../aiUsage'
 
 const row = (v: Partial<UsageRow>): UsageRow => ({
   feature: '질문',
-  model: 'gpt-5',
+  model: 'gpt-5.6-sol',
   tokens_in: null,
   tokens_out: null,
   audio_sec: null,
@@ -16,7 +16,7 @@ const row = (v: Partial<UsageRow>): UsageRow => ({
 describe('wonOf — 한 줄이 얼마인가', () => {
   it('글 부르기는 들어온 토큰과 나간 토큰을 따로 곱한다', () => {
     // 1,000 * 1.8 + 1,000 * 14.0 = 15.8
-    const v = wonOf(row({ model: 'gpt-5', tokens_in: 1000, tokens_out: 1000 }))
+    const v = wonOf(row({ model: 'gpt-5.6-sol', tokens_in: 1000, tokens_out: 1000 }))
     expect(v).toBeCloseTo(15.8, 5)
   })
 
@@ -41,11 +41,11 @@ describe('wonOf — 한 줄이 얼마인가', () => {
 
 describe('byFeature — 어디서 나갔나', () => {
   const rows = [
-    row({ feature: '채굴', model: 'gpt-5', tokens_in: 10000, tokens_out: 2000 }),
-    row({ feature: '채굴', model: 'gpt-5', tokens_in: 10000, tokens_out: 2000 }),
-    row({ feature: '회의록', model: 'gpt-5', tokens_in: 4000, tokens_out: 3000 }),
-    row({ feature: '질문', model: 'gpt-5-mini', tokens_in: 500, tokens_out: 200 }),
-    row({ feature: '질문', model: 'gpt-5-mini', ok: false }),
+    row({ feature: '채굴', model: 'gpt-5.6-sol', tokens_in: 10000, tokens_out: 2000 }),
+    row({ feature: '채굴', model: 'gpt-5.6-sol', tokens_in: 10000, tokens_out: 2000 }),
+    row({ feature: '회의록', model: 'gpt-5.6-sol', tokens_in: 4000, tokens_out: 3000 }),
+    row({ feature: '질문', model: 'gpt-5.6-terra', tokens_in: 500, tokens_out: 200 }),
+    row({ feature: '질문', model: 'gpt-5.6-terra', ok: false }),
   ]
 
   it('★ 많이 쓴 순서로 준다 — 줄일 곳부터 보여야 한다', () => {
@@ -89,7 +89,7 @@ describe('byFeature — 어디서 나갔나', () => {
 describe('summarize — 한 줄 요약', () => {
   it('전체 합을 낸다', () => {
     const s = summarize([
-      row({ feature: '채굴', model: 'gpt-5', tokens_in: 1000, tokens_out: 1000 }),
+      row({ feature: '채굴', model: 'gpt-5.6-sol', tokens_in: 1000, tokens_out: 1000 }),
       row({ feature: '전사', model: 'whisper-1', audio_sec: 60 }),
     ])
     expect(s.calls).toBe(2)
@@ -134,5 +134,35 @@ describe('보기 좋게 적기', () => {
     expect(hours(0)).toBe('0분')
     expect(hours(600)).toBe('10분')
     expect(hours(4320)).toBe('1시간 12분')
+  })
+})
+
+/*
+  ★ 2026-09-08 에 실제로 겪은 일.
+  단가표에 **실제로 안 쓰는 모델 이름**을 적어 놓아서 화면이
+  「단가를 모르는 모델 2건」만 띄웠다. 개수만 보고는 **무엇을 적어야 할지
+  알 수 없어** 못 고쳤다. 이름을 보여 줘야 고칠 수 있다.
+*/
+describe('단가표에 없는 모델 — 이름을 알려 준다', () => {
+  it('★ 개수만 세지 않고 어떤 모델인지 이름을 모은다', () => {
+    const s = summarize([
+      row({ model: '안-적힌-모델' }),
+      row({ model: '안-적힌-모델' }),
+      row({ model: '다른-안-적힌-모델' }),
+      row({ model: 'gpt-5.6-sol', tokens_in: 100, tokens_out: 100 }),
+    ])
+    expect(s.unpriced).toBe(3)
+    expect(s.unpricedModels).toEqual(['다른-안-적힌-모델', '안-적힌-모델'])
+  })
+
+  it('전부 단가표에 있으면 빈 목록', () => {
+    const s = summarize([row({ model: 'gpt-5.6-sol', tokens_in: 10, tokens_out: 10 })])
+    expect(s.unpricedModels).toEqual([])
+  })
+
+  it('실제로 쓰는 모델 이름이 단가표에 있다 — 이게 틀려서 겪은 일이다', () => {
+    expect(isPriced(row({ model: 'gpt-5.6-sol' }))).toBe(true)
+    expect(isPriced(row({ model: 'gpt-5.6-terra' }))).toBe(true)
+    expect(isPriced(row({ feature: '전사', model: 'gemini-3.5-transcribe', audio_sec: 60 }))).toBe(true)
   })
 })

@@ -235,12 +235,42 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
    */
   const [model, setModel] = useState(readTranscribeModel)
 
-  /** 소리 하나를 다시 받아쓴다. 성공하면 화면의 글에 곧바로 끼워 넣는다 */
+  /** 다시 받아쓰는 중 몇 초째인가 — 통째로 보내면 몇 분 걸린다 */
+  const [redoWait, setRedoWait] = useState(0)
+
+  /**
+   * 소리 하나를 다시 받아쓴다. 성공하면 화면의 글에 곧바로 끼워 넣는다.
+   *
+   * ── ★ 여기가 실시간 회의의 화자 구분 자리다 (2026-09-08) ─
+   * 실시간 받아쓰기는 15초씩 보내므로 그 자리에서는 화자를 갈라 봐야 쓸모가 없다.
+   * 그런데 실시간 회의는 **끊지 않은 녹음(「안전망」)을 통째로 보관**한다.
+   * 그 소리를 여기서 다시 받아쓰면 **회의 전체를 한 번에** 듣게 되므로
+   * 화자 번호가 끝까지 이어진다.
+   *
+   * 즉 실시간 회의의 흐름은 이렇게 된다 —
+   *   회의 중  : 15초씩 받아써서 **그 자리에서 보며** 회의한다 (화자 구분 없음)
+   *   회의 후  : 보관된 소리로 **화자 구분해서 다시** 받아쓴다
+   *
+   * ── 소리를 내려받지 않는다 ───────────────────────────────
+   * 전에는 브라우저가 보관함에서 내려받아 **다시 서버로 올려** 보냈다.
+   * 30분짜리는 그 길에서 「너무 큽니다」로 막힌다. 이제 **경로만** 넘기고
+   * 서버가 보관함에서 바로 가져간다.
+   */
   const redo = useMutation({
     mutationFn: async (row: MeetingAudio) => {
-      const blob = await fetchMeetingAudio(row.path)
       const hint = (glossary ?? []).map((g) => g.term).join(', ').slice(0, 700)
-      const got = await transcribeChunk(blob, hint, model)
+      setRedoWait(0)
+      const got = await transcribeChunk(
+        null,
+        hint,
+        model,
+        undefined,
+        // 화자 구분은 제미나이만 된다. 아니면 조용히 꺼진다
+        model.startsWith('gemini'),
+        (sec) => setRedoWait(sec),
+        // 소리를 안 싣고 **보관함 경로만** 넘긴다
+        row.path,
+      )
       if (!got.trim()) {
         throw new Error('변환 결과가 비어 있습니다. 음성이 너무 작거나 잡음이 많을 수 있습니다.')
       }
@@ -256,6 +286,7 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
       void qc.invalidateQueries({ queryKey: ['meeting-audio', meeting.id] })
       void qc.invalidateQueries({ queryKey: ['meetings'] })
     },
+    onSettled: () => setRedoWait(0),
   })
 
   const dropAudio = useMutation({
@@ -381,7 +412,16 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
         <div className="bg-parchment rounded-md p-3.5">
           <p className="text-body font-semibold">변환하지 못한 음성 {pendingAudio.length}건</p>
           <p className="text-caption text-ink-mute mt-1 leading-relaxed">
-            「다시 변환」을 누르면 <strong className="font-semibold">전사문의 해당 시점에 삽입됩니다.</strong>
+            「다시 변환」을 누르면 <strong className="font-semibold">전사문의 해당 시점에 삽입됩니다.</strong>{' '}
+            {model.startsWith('gemini') && (
+              <>
+                제미나이로 다시 변환하면{' '}
+                <strong className="font-semibold">화자 구분(화자1: …)이 함께 들어갑니다.</strong>{' '}
+                실시간 회의는 15초씩 받아써서 회의 중에는 화자를 가를 수 없지만,
+                보관된 소리를 통째로 다시 받아쓰면 화자 번호가 끝까지 이어집니다
+                (30분 이하 기준).
+              </>
+            )}
           </p>
           {/* 같은 소리를 다른 모델로 다시 돌려 견줄 수 있다 */}
           <div className="mt-3">
@@ -407,7 +447,15 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
                   disabled={redo.isPending}
                   onClick={() => redo.mutate(a)}
                 >
-                  {redo.isPending ? '변환 중…' : '다시 변환'}
+                  {/*
+                    통째로 보내면 몇 분 걸린다. 그동안 아무 말이 없으면 멈춘 줄 안다 —
+                    올라가는 숫자가 「돌고 있다」는 유일한 증거다
+                  */}
+                  {redo.isPending
+                    ? redoWait > 0
+                      ? `변환 중… ${redoWait}초`
+                      : '변환 중…'
+                    : '다시 변환'}
                 </PillButton>
                 <PillButton type="button" variant="ghost" onClick={() => void downloadAudio(a)}>
                   내려받기

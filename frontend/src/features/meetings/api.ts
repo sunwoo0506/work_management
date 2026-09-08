@@ -258,14 +258,18 @@ export async function draftMinutes(v: {
  * @param model 이번만 다른 모델로 받아쓰고 싶을 때. 안 주면 화면에서 고른 값
  * @param seconds 이 토막이 몇 초짜리인가. 사용량 기록에만 쓴다
  * @param diarize 화자 구분 받아쓰기를 켤까. **제미나이만 된다**
+ * @param onWait 오래 걸릴 때 몇 초째인지 알려 준다
+ * @param audioPath 보관함에 이미 올라가 있는 소리의 경로. 주면 **소리를 안 보내고**
+ *                  서버가 거기서 가져온다 — 20MB 가 넘는 파일은 요청에 못 싣는다
  */
 export async function transcribeChunk(
-  blob: Blob,
+  blob: Blob | null,
   hint?: string,
   model?: string,
   seconds?: number,
   diarize?: boolean,
   onWait?: (sec: number) => void,
+  audioPath?: string,
 ): Promise<string> {
   const use = model || readTranscribeModel()
 
@@ -281,7 +285,9 @@ export async function transcribeChunk(
 
   for (let attempt = 0; ; attempt++) {
     const form = new FormData()
-    form.append('file', blob, 'chunk')
+    // 보관함 경로가 있으면 소리는 안 싣는다 — 서버가 거기서 가져온다
+    if (audioPath) form.append('audioPath', audioPath)
+    else if (blob) form.append('file', blob, 'chunk')
     if (hint) form.append('hint', hint)
     form.append('model', use)
     if (seconds && seconds > 0) form.append('seconds', String(Math.round(seconds)))
@@ -620,6 +626,34 @@ export async function loadGlossary(companyId: string): Promise<GlossaryPair[]> {
 const AUDIO_BUCKET = 'meeting-audio'
 
 export type MeetingAudio = Row<'meeting_audio'>
+
+/**
+ * 소리를 보관함에 올리고 **경로만** 돌려준다 (2026-09-08).
+ *
+ * 통째로 받아쓸 때 쓴다. 30분짜리 원본은 20~30MB 인데 그걸 서버 함수에
+ * 직접 실어 보내면 「너무 큽니다」로 막힌다. 보관함은 큰 파일을 다루라고
+ * 있는 곳이고, **이 저장소가 이미 쓰던 길**이다.
+ *
+ * `meeting_audio` 표에는 넣지 않는다 — 그 표는 「받아쓰기에 실패해 남겨 둔 소리」
+ * 목록이고, 여기 올리는 것은 **지금 받아쓸 것**이라 성격이 다르다.
+ * 회의록 화면의 「남은 소리」 목록에 섞이면 안 된다.
+ */
+export async function uploadForTranscribe(meetingId: string, file: File): Promise<string> {
+  const { data: auth } = await supabase.auth.getUser()
+  const userId = auth.user?.id
+  if (!userId) throw new Error('로그인 정보를 읽지 못했습니다.')
+
+  const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] ?? 'm4a').toLowerCase()
+  const path = `${userId}/${meetingId}/whole-${Date.now()}.${ext}`
+  // 형식 이름 뒤에 붙은 설명을 떼고 올린다 — 보관함이 글자 그대로 맞춰 본다
+  const contentType = (file.type || 'audio/mp4').split(';')[0].trim()
+
+  const { error } = await supabase.storage
+    .from(AUDIO_BUCKET)
+    .upload(path, file, { contentType })
+  if (error) throw error
+  return path
+}
 
 /** 소리를 올린다. 경로 첫 칸이 본인 아이디라 남의 것은 손도 못 댄다 */
 export async function uploadMeetingAudio(input: {

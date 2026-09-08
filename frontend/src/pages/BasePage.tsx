@@ -4,16 +4,24 @@ import DirectiveList from '../features/directives/DirectiveList'
 import { useDirectives } from '../features/directives/hooks'
 import HandoverList from '../features/base/HandoverList'
 import ContactList from '../features/base/ContactList'
+import { StandardsPanel } from '../features/base/SettingsPanel'
 import TaskDetail from '../features/tasks/TaskDetail'
 import { useTasks } from '../features/tasks/hooks'
 
 /*
-  「설정」은 2026-09-08 에 별도 탭(/settings)으로 떼어냈다.
-  여기 남은 셋은 **일하다가 들춰 보는 자료**이고, 설정은 **툴이 어떻게 동작할지
-  정하는 곳**이라 성격이 다르다. 자주 여는 것과 어쩌다 여는 것을 한 페이지에
-  묶어 두면 어쩌다 여는 쪽을 못 찾는다 — 실제로 못 찾으셨다.
+  ── 2026-09-08 에 두 번 옮겼다 ──────────────────────────
+  ① 「설정」을 별도 탭(/settings)으로 떼어냈다. 여기 있는 것들은 **일하다가
+     들춰 보는 자료**이고, 설정은 **툴이 어떻게 동작할지 정하는 곳**이라
+     성격이 다르다. 자주 여는 것과 어쩌다 여는 것을 한 페이지에 묶어 두면
+     어쩌다 여는 쪽을 못 찾는다 — 실제로 못 찾으셨다.
+
+  ② 그런데 「업무영역」과 「사내 용어집」은 **도로 여기로 가져왔다**(부장님 판단).
+     그 둘은 툴 설정이 아니라 **회사의 기준**이다 — 업무를 어떻게 나누는지,
+     우리 회사 말이 무엇인지. 바뀌지 않는 것이고 일하다가 들춰 본다.
+
+     설정에는 AI 사용량과 로그인만 남았다. 둘 다 **툴을 손보는 것**이다.
 */
-const VIEWS = ['지시사항', '인수인계', '연락처'] as const
+const VIEWS = ['지시사항', '인수인계', '연락처', '업무영역·용어'] as const
 type View = (typeof VIEWS)[number]
 
 export default function BasePage() {
@@ -29,7 +37,7 @@ export default function BasePage() {
     <div className="max-w-[1120px]">
       <PageHeader
         title="기준"
-        description="바뀌지 않는 것들. 지시사항·인수인계·연락처가 여기 모입니다."
+        description="바뀌지 않는 것들. 지시사항·인수인계·연락처·업무영역·사내 용어집이 여기 모입니다."
       />
 
       <div className="flex gap-1.5 mt-5">
@@ -79,6 +87,7 @@ export default function BasePage() {
         )}
         {view === '인수인계' && <HandoverList />}
         {view === '연락처' && <ContactList />}
+        {view === '업무영역·용어' && <StandardsPanel />}
       </div>
 
       {open && <TaskDetail task={open} onClose={() => setOpenId(null)} />}

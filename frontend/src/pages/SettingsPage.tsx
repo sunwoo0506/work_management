@@ -15,8 +15,10 @@ import SettingsPanel from '../features/base/SettingsPanel'
  * 있으면 **설정을 열려고 「기준」을 거쳐야 한다.** 어디 있는지도 잘 기억나지
  * 않는다 — 부장님이 AI 사용량을 찾다가 못 찾으신 자리이기도 하다.
  *
- * 그리고 설정에 들어갈 것이 계속 늘고 있다 — 업무영역 · 사내 용어집 ·
- * AI 사용량 · 로그인. 남의 페이지에 얹혀 있을 크기가 아니다.
+ * ⚠️ 처음에는 업무영역·사내 용어집도 여기 뒀는데 **같은 날 도로 기준으로
+ *    옮겼다**(부장님 판단). 그 둘은 툴 설정이 아니라 **회사의 기준**이다 —
+ *    업무를 어떻게 나누는지, 우리 회사 말이 무엇인지. 여기 남은 것은
+ *    AI 사용량과 로그인, 즉 **툴을 손보는 것**뿐이다.
  *
  * ⚠️ 내용은 그대로다. **자리만 옮겼다** — SettingsPanel 은 손대지 않았다.
  */
@@ -25,7 +27,7 @@ export default function SettingsPage() {
     <div className="max-w-[1120px]">
       <PageHeader
         title="설정"
-        description="이 툴이 어떻게 동작할지 정하는 곳입니다. 업무영역·사내 용어집·AI 사용량·로그인."
+        description="이 툴이 어떻게 동작할지 정하는 곳입니다. AI 사용량 · 로그인."
       />
       <div className="mt-5">
         <SettingsPanel />

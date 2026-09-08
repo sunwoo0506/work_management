@@ -83,11 +83,40 @@ Deno.serve(async (req) => {
     */
     const jobId = String(form?.get('jobId') ?? '').trim()
 
-    const file = form?.get('file')
+    /*
+      ★ 큰 소리는 **보관함에서 가져온다** (2026-09-08).
+
+      ── 왜 ────────────────────────────────────────────────
+      화자 구분을 켜면 30분짜리를 통째로 보내는데, 원본이 20~30MB 다.
+      그걸 요청에 실어 보내면 **「녹음 토막이 너무 큽니다」로 막힌다.**
+      서버 함수가 한 번에 받을 수 있는 크기가 문서에 없어서 한도를 짐작으로
+      올릴 수도 없다.
+
+      그래서 화면이 **보관함(Storage)에 먼저 올리고 경로만** 보낸다.
+      여기서 그 경로로 내려받는다 — 보관함은 큰 파일을 다루라고 있는 곳이고,
+      **이미 쓰고 있던 길**이다(받아쓰기에 실패한 소리를 거기 넣어 왔다).
+
+      ⚠️ 부른 사람의 로그인 표로 내려받으므로 **남의 소리는 못 가져온다.**
+    */
+    const audioPath = String(form?.get('audioPath') ?? '').trim()
+
+    let file = form?.get('file')
+
+    if (!jobId && audioPath) {
+      const { data, error } = await db.storage.from('meeting-audio').download(audioPath)
+      if (error || !data) {
+        return json({ error: '보관함에서 소리를 가져오지 못했습니다.' }, 404)
+      }
+      file = new File([data], 'audio', { type: data.type || 'audio/mp4' })
+    }
+
     if (!jobId) {
       if (!(file instanceof File)) return json({ error: '녹음 토막이 없습니다.' }, 400)
       if (file.size === 0) return json({ text: '' })
-      if (file.size > MAX_BYTES) return json({ error: '녹음 토막이 너무 큽니다.' }, 413)
+      // 보관함에서 가져온 것은 크기를 안 막는다 — 거기 있다는 건 이미 올라갔다는 뜻이다
+      if (!audioPath && file.size > MAX_BYTES) {
+        return json({ error: '녹음 토막이 너무 큽니다.' }, 413)
+      }
     }
 
     /**

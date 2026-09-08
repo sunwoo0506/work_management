@@ -38,10 +38,19 @@ export type UsageRow = {
  */
 export const PRICED_AT = '2026-09-08'
 
-/** 글 부르기 — 1,000토큰당 원. 모르는 모델은 0 으로 둔다(모르는 값을 지어내지 않는다) */
+/**
+ * 글 부르기 — 1,000토큰당 원.
+ *
+ * ⚠️ **처음에 여기가 틀려 있었다** (2026-09-08). 실제로 쓰는 모델 이름을
+ *    확인하지 않고 짐작으로 적어서, 사용량 화면이 「단가를 모르는 모델 2건」만
+ *    띄웠다. 모델 이름은 `_shared/provider/openai.ts` 의 기본값과
+ *    환경변수 `AI_MODEL`·`AI_MODEL_LIGHT` 가 정한다 — **거기를 보고 맞춘다.**
+ */
 const TEXT_WON: Record<string, { in: number; out: number }> = {
-  'gpt-5': { in: 1.8, out: 14.0 },
-  'gpt-5-mini': { in: 0.35, out: 2.8 },
+  // 판단이 섞인 일 — 회의록·채굴·질문
+  'gpt-5.6-sol': { in: 1.8, out: 14.0 },
+  // 가벼운 일 — 체크리스트 뽑기
+  'gpt-5.6-terra': { in: 0.35, out: 2.8 },
 }
 
 /** 소리 받아쓰기 — 1분당 원 */
@@ -135,10 +144,22 @@ export type UsageSummary = {
   won: number
   unpriced: number
   unknownLength: number
+  /**
+   * 단가표에 없는 **모델 이름들.**
+   *
+   * ★ 개수만 세면 못 고친다. 「2건이 단가를 모른다」만 보고는 **무엇을 적어야
+   * 할지 알 수 없다.** 이름을 보여 줘야 단가표에 그 줄을 더할 수 있다.
+   * 2026-09-08 에 실제로 그래서 못 고쳤다.
+   */
+  unpricedModels: string[]
 }
 
 export function summarize(rows: readonly UsageRow[]): UsageSummary {
   const totals = byFeature(rows)
+  const names = new Set<string>()
+  for (const r of rows) {
+    if (!isPriced(r)) names.add(r.model || '(이름 없음)')
+  }
   return {
     totals,
     calls: totals.reduce((n, t) => n + t.calls, 0),
@@ -146,6 +167,7 @@ export function summarize(rows: readonly UsageRow[]): UsageSummary {
     won: totals.reduce((n, t) => n + t.won, 0),
     unpriced: totals.reduce((n, t) => n + t.unpriced, 0),
     unknownLength: totals.reduce((n, t) => n + t.unknownLength, 0),
+    unpricedModels: [...names].sort(),
   }
 }
 

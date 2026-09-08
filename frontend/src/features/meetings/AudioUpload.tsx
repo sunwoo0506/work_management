@@ -7,7 +7,13 @@ import { Field, PillButton, TextArea, TextInput } from '../../components/Field'
 import { ymd } from '../../domain/daily'
 import { mergeIntoTranscript } from '../../domain/transcript'
 import { useCompanyId } from '../companies/useCompany'
-import { loadGlossary, transcribeChunk, updateMeeting, uploadMeetingAudio } from './api'
+import {
+  loadGlossary,
+  transcribeChunk,
+  updateMeeting,
+  uploadForTranscribe,
+  uploadMeetingAudio,
+} from './api'
 import { CHUNK_SEC, decodeRisk, decodeToMono, makeChunk, readAudioMeta } from './decodeAudio'
 import type { AudioMeta, Decoded } from './decodeAudio'
 import { chunkRanges } from '../../domain/audio'
@@ -261,6 +267,17 @@ export default function AudioUpload() {
         .single()
       if (insErr) throw insErr
 
+      /*
+        통째로 보낼 때는 **원본을 보관함에 먼저 올린다.** 30분짜리 원본은
+        20~30MB 라 서버 함수에 직접 실어 보내면 「너무 큽니다」로 막힌다.
+        올려 두면 함수가 거기서 가져간다.
+      */
+      let wholePath: string | undefined
+      if (whole) {
+        setStep('소리를 올리는 중…')
+        wholePath = await uploadForTranscribe(meeting.id, file)
+      }
+
       const hint = (glossary ?? []).map((g) => g.term).join(', ').slice(0, 700)
       /** 받아쓴 글을 시각 순서로 담아 둔다. 여러 개가 동시에 끝나므로 여기서 모은다 */
       const got = new Map<number, string>()
@@ -273,7 +290,7 @@ export default function AudioUpload() {
           if (i >= ranges.length || stopRef.current) return
 
           // 구간은 보낼 때 만들고 보내고 나면 버린다 — 다 만들어 두면 메모리가 쌓인다
-          const blob = whole ? file : makeChunk(decoded, ranges[i].from, ranges[i].to)
+          const blob = whole ? null : makeChunk(decoded, ranges[i].from, ranges[i].to)
           const atMs = Math.round(ranges[i].from * 1000)
 
           try {
@@ -286,6 +303,8 @@ export default function AudioUpload() {
               diarize && canDiarize,
               // 통째로 보내면 몇 분 걸린다. 아무 말이 없으면 멈춘 줄 안다
               whole ? (sec) => setWaited(sec) : undefined,
+              // 통째로 보낼 때는 소리를 요청에 안 싣는다 — 20MB 를 넘어 막힌다
+              whole ? wholePath : undefined,
             )
             if (text.trim()) {
               got.set(atMs, text)
@@ -302,14 +321,19 @@ export default function AudioUpload() {
           } catch (e) {
             실패 += 1
             setError(e instanceof Error ? e.message : String(e))
-            // 변환하지 못한 구간은 보관함에 넣는다. 회의록에서 나중에 다시 변환할 수 있다
-            await uploadMeetingAudio({
-              companyId,
-              meetingId: meeting.id,
-              atMs,
-              reason: '받아쓰기 실패',
-              blob,
-            }).catch(() => {})
+            /*
+              변환하지 못한 구간은 보관함에 넣는다. 회의록에서 나중에 다시 변환할 수 있다.
+              통째로 보낸 경우는 **이미 보관함에 있으므로** 또 넣지 않는다.
+            */
+            if (blob) {
+              await uploadMeetingAudio({
+                companyId,
+                meetingId: meeting.id,
+                atMs,
+                reason: '받아쓰기 실패',
+                blob,
+              }).catch(() => {})
+            }
           } finally {
             setDoneCount((n) => n + 1)
           }
