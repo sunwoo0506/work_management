@@ -7,6 +7,8 @@ import {
   ASK_RULES_WEB,
   CHECKLIST_RULES,
   FOCUS_REMINDER,
+  MINE_PART_NOTE,
+  MINE_RULES,
   MINUTES_AREA_NOTE,
   MINUTES_PART_NOTE,
   MINUTES_RULES,
@@ -55,12 +57,15 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => null)
     const mode: string = body?.mode
     const taskId: string = body?.taskId
-    if (mode !== '질문' && mode !== '체크리스트' && mode !== '회의록') {
-      return json({ error: '모드는 「질문」·「체크리스트」·「회의록」 중 하나여야 합니다.' }, 400)
+    if (mode !== '질문' && mode !== '체크리스트' && mode !== '회의록' && mode !== '채굴') {
+      return json(
+        { error: '모드는 「질문」·「체크리스트」·「채굴」·「회의록」 중 하나여야 합니다.' },
+        400,
+      )
     }
 
     /**
-     * 회의록만 자료를 **브라우저에서 받는다.**
+     * 회의 관련 두 모드(채굴 · 회의록)만 자료를 **브라우저에서 받는다.**
      *
      * 다른 모드는 DB 를 여기서 다시 읽는다 — 브라우저가 보낸 걸 믿으면
      * 남의 업무 내용을 밀어 넣을 수 있기 때문이다. 회의록은 사정이 다르다.
@@ -69,6 +74,7 @@ Deno.serve(async (req) => {
      *
      * 밀어 넣어도 새는 것이 없다 — 자기가 방금 말한 것을 자기가 요약받을 뿐이다.
      */
+    if (mode === '채굴') return await mine(body)
     if (mode === '회의록') return await minutes(body)
 
     if (!taskId) return json({ error: '어느 업무인지가 없습니다.' }, 400)
@@ -137,44 +143,136 @@ Deno.serve(async (req) => {
 const TRANSCRIPT_MAX = 40_000
 
 /**
- * 회의록 초안 — 받아쓴 글을 네 칸으로 정리한다.
+ * 회의에 딸려 오는 머리말 — 제목 · 참석 · 미리 정한 안건 · 사용자 메모.
  *
- * 나눈 결과(요약·결정·할 일·확인 필요)를 여기서 파싱하지 않고 **글 그대로 돌려준다.**
- * 나누는 일은 `domain/transcript.ts` 가 한다 — 그래야 브라우저·AI 없이 시험할 수 있고,
- * 형식이 어긋나 못 나눴을 때 화면이 원문을 그대로 보여 줄 수 있다.
+ * 채굴(1걸음)과 회의록(2걸음)이 **똑같이** 쓴다. 두 군데에 따로 적어 두었더니
+ * 한쪽만 고치는 일이 생긴다. 한 곳으로 모은다.
+ *
+ * `myNotes`(회의 중 사용자가 직접 적은 메모)는 **첫 구간에만** 붙는다 —
+ * 구간마다 붙이면 같은 메모가 여러 번 캐내져 회의록에 중복으로 남는다.
  */
-async function minutes(body: any) {
-  const transcript = String(body?.transcript ?? '').trim()
-  if (!transcript) return json({ error: '받아쓴 글이 없습니다.' }, 400)
+function meetingHead(body: any): string {
+  return [
+    body?.title ? `회의 제목: ${String(body.title).slice(0, 200)}` : null,
+    body?.attendees ? `참석: ${String(body.attendees).slice(0, 300)}` : null,
+    body?.agenda ? `미리 정한 안건: ${String(body.agenda).slice(0, 500)}` : null,
+    body?.myNotes
+      ? `회의 중 사용자가 직접 적은 메모:\n${String(body.myNotes).slice(0, 2000)}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
 
+/**
+ * 사내 용어집 — 이번 회의에 나온 것만 화면이 골라 보낸다 (설계서 §5.8).
+ * 「타이백」으로 받아써져도 회의록에는 「타이벡」으로 적히게 하는 자리다.
+ *
+ * **채굴(1걸음)에서 고쳐 적히는 것이 원칙**이다. 2걸음에도 붙여 두는 이유는,
+ * 1걸음이 놓친 표기를 마지막으로 한 번 더 걸러 주기 때문이다.
+ */
+function glossaryNote(body: any): string {
   const glossary: { term: string; means: string }[] = Array.isArray(body?.glossary)
     ? body.glossary
         .filter((g: any) => g && typeof g.term === 'string' && typeof g.means === 'string')
         .slice(0, 60)
     : []
+  if (glossary.length === 0) return ''
+  return (
+    `\n\n## 사내 용어집 (이 회의에 나온 것)\n` +
+    glossary.map((g) => `- ${g.term}: ${g.means}`).join('\n') +
+    `\n소리가 비슷하게 받아써진 대목은 이 표기로 고쳐 적고, 확신이 없으면 「확인 필요」에 적으세요.`
+  )
+}
 
-  const head = [
-    body?.title ? `회의 제목: ${String(body.title).slice(0, 200)}` : null,
-    body?.attendees ? `참석: ${String(body.attendees).slice(0, 300)}` : null,
-    body?.agenda ? `미리 정한 안건: ${String(body.agenda).slice(0, 500)}` : null,
-    body?.myNotes ? `회의 중 사용자가 직접 적은 메모:\n${String(body.myNotes).slice(0, 2000)}` : null,
-  ]
-    .filter(Boolean)
-    .join('\n')
+/** 넘어온 용어집 개수 — 근거 표시에만 쓴다 */
+function glossaryCount(body: any): number {
+  return Array.isArray(body?.glossary) ? Math.min(body.glossary.length, 60) : 0
+}
+
+/**
+ * ★ 1걸음 「채굴」 — 받아쓴 글에서 사실만 캐낸다. 요약하지 않는다.
+ *
+ * ── 왜 이 걸음이 생겼나 (2026-09-08) ────────────────────
+ * 전에는 받아쓴 글 → 회의록을 한 번에 시켰다. 그랬더니 회의록이 제목 목록처럼
+ * 얇게 나왔다. 「줄여라」와 「구성해라」를 동시에 시키면 **줄이는 쪽이 이긴다** —
+ * 줄이라는 지시는 문장마다 바로 적용되고, 구성하라는 지시는 다 읽은 뒤에야
+ * 쓸 수 있기 때문이다. 그래서 숫자의 산출근거·버린 안·막힌 사유가 먼저 잘렸다.
+ *
+ * 이 걸음의 결과는 **사람이 읽지 않는다.** 2걸음의 재료다.
+ * 그래서 형식을 파싱하지 않고 글 그대로 돌려준다 — 2걸음에 그대로 넘어간다.
+ */
+async function mine(body: any) {
+  const transcript = String(body?.transcript ?? '').trim()
+  if (!transcript) return json({ error: '받아쓴 글이 없습니다.' }, 400)
+
+  const part = Number(body?.part ?? 0)
+  const parts = Number(body?.parts ?? 0)
+  const partNote = parts > 1 && part > 0 ? MINE_PART_NOTE(part, parts) : ''
+
+  const provider = getProvider()
+  const result = await provider.chat(
+    [
+      { role: 'system', content: MINE_RULES },
+      {
+        role: 'user',
+        content:
+          `${meetingHead(body)}${glossaryNote(body)}\n\n## 받아쓴 글\n` +
+          transcript.slice(0, TRANSCRIPT_MAX) +
+          // 구간 안내는 **받아쓴 글 뒤**에 붙인다. 앞에 두면 긴 글을 사이에 두고
+          // 멀어져 묽어진다 — T-01 에서 겪었다.
+          partNote +
+          '\n\n위 글에서 사실을 캐내 주세요. 요약하지 마세요.',
+      },
+    ],
+    {},
+  )
+
+  return json({
+    mode: '채굴',
+    text: result.text,
+    model: result.model,
+    tokensIn: result.tokensIn,
+    tokensOut: result.tokensOut,
+    truncated: transcript.length > TRANSCRIPT_MAX,
+  })
+}
+
+/**
+ * ★ 2걸음 「구성」 — 캐낸 사실 메모를 회사 양식으로 짠다.
+ *
+ * ── 무엇이 넘어오나 ──────────────────────────────────────
+ * `mined` — 1걸음(채굴)이 구간별로 캐낸 것을 화면이 **하나로 이어 붙인 글**.
+ * 그래서 이 걸음은 **회의 전체를 한 번에 본다.** 전에는 구간마다 회의록을
+ * 만들어 합쳤기 때문에, 한 안건이 두 구간에 걸치면 앞 구간의 「현재상황」과
+ * 뒤 구간의 「결론」이 따로 놀았다. 그 문제가 여기서 사라진다.
+ *
+ * `transcript` 는 **뒷걸음질용**이다 — 1걸음이 실패했을 때 화면이 받아쓴 글을
+ * 그대로 넘겨 예전처럼 한 번에 만든다. AI 가 죽어도 기록은 남아야 하듯,
+ * 한 걸음이 죽어도 회의록은 나와야 한다.
+ *
+ * 나눈 결과를 여기서 파싱하지 않고 **글 그대로 돌려준다.** 나누는 일은
+ * `domain/minutes.ts` 가 한다 — 그래야 브라우저·AI 없이 시험할 수 있고,
+ * 형식이 어긋나 못 나눴을 때 화면이 원문을 그대로 보여 줄 수 있다.
+ */
+async function minutes(body: any) {
+  const mined = String(body?.mined ?? '').trim()
+  const transcript = String(body?.transcript ?? '').trim()
+  const source = mined || transcript
+  if (!source) return json({ error: '회의록으로 만들 글이 없습니다.' }, 400)
+
+  /*
+    캐낸 메모로 짤 때와 받아쓴 글로 바로 짤 때는 **머리말이 달라야 한다.**
+    2걸음 규칙은 "넘어오는 것은 캐낸 사실 메모"라고 말하고 있으므로,
+    뒷걸음질일 때 그대로 두면 받아쓴 글을 메모로 착각하고 또 줄인다.
+  */
+  const bodyLabel = mined
+    ? '## 캐낸 사실 메모 (이 회의에서 나온 것 전부)'
+    : '## 받아쓴 글 (사실 메모를 만들지 못해 원문을 그대로 넘깁니다)'
 
   /**
-   * 사내 용어집 — 이번 회의에 나온 것만 화면이 골라 보낸다 (설계서 §5.8).
-   * 「타이백」으로 받아써져도 회의록에는 「타이벡」으로 적히게 하는 자리다.
-   */
-  const terms = glossary.length
-    ? `\n\n## 사내 용어집 (이 회의에 나온 것)\n` +
-      glossary.map((g) => `- ${g.term}: ${g.means}`).join('\n') +
-      `\n소리가 비슷하게 받아써진 대목은 이 표기로 고쳐 적고, 확신이 없으면 「확인 필요」에 적으세요.`
-    : ''
-
-  /**
-   * 긴 회의는 화면이 구간으로 잘라 보낸다. 몇 번째 구간인지 알려 줘야
-   * AI 가 그 구간만 보고 「목적」이나 「다음 회의」를 단정하지 않는다.
+   * 캐낸 메모마저 한 번에 못 넘길 만큼 길 때만 구간이 갈린다.
+   * 보통은 갈리지 않는다 — 채굴 결과는 받아쓴 글의 1/4~1/3 이다.
    */
   const part = Number(body?.part ?? 0)
   const parts = Number(body?.parts ?? 0)
@@ -196,9 +294,9 @@ async function minutes(body: any) {
       {
         role: 'user',
         content:
-          `${head}${terms}\n\n## 받아쓴 글\n` +
-          transcript.slice(0, TRANSCRIPT_MAX) +
-          // ⚠️ 구간 안내와 분류 목록은 **받아쓴 글 뒤**에 붙인다.
+          `${meetingHead(body)}${glossaryNote(body)}\n\n${bodyLabel}\n` +
+          source.slice(0, TRANSCRIPT_MAX) +
+          // ⚠️ 구간 안내와 분류 목록은 **글 뒤**에 붙인다.
           //    앞(규칙)에 두면 긴 글을 사이에 두고 멀어져 묽어진다 — T-01 에서 겪었다.
           //
           //    이 두 줄이 통째로 빠져 있었다(2026-08-18 발견). 값은 만들어 두고
@@ -207,23 +305,26 @@ async function minutes(body: any) {
           //    **보내지 않으면 애초에 지킬 것도 없다.**
           partNote +
           areaNote +
-          '\n\n위 글로 회의록 초안을 만들어 주세요.',
+          '\n\n위 글로 회의록 초안을 만들어 주세요. 나온 만큼 남기세요.',
       },
     ],
     {},
   )
 
+  const terms = glossaryCount(body)
   return json({
     mode: '회의록',
     text: result.text,
     sources: [
-      { kind: '전사문', label: `이번 회의 받아쓴 글 ${transcript.length.toLocaleString()}자` },
-      ...(glossary.length ? [{ kind: '용어집', label: `사내 용어 ${glossary.length}개` }] : []),
+      mined
+        ? { kind: '사실 메모', label: `받아쓴 글에서 캐낸 사실 ${mined.length.toLocaleString()}자` }
+        : { kind: '전사문', label: `이번 회의 받아쓴 글 ${transcript.length.toLocaleString()}자` },
+      ...(terms ? [{ kind: '용어집', label: `사내 용어 ${terms}개` }] : []),
     ],
     model: result.model,
     tokensIn: result.tokensIn,
     tokensOut: result.tokensOut,
-    truncated: transcript.length > TRANSCRIPT_MAX,
+    truncated: source.length > TRANSCRIPT_MAX,
   })
 }
 

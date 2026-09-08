@@ -5,6 +5,7 @@ import { readFunctionError } from '../assistant/api'
 import type { Source } from '../assistant/api'
 import type { GlossaryPair, Minutes } from '../../domain/transcript'
 import type { MinutesDoc } from '../../domain/minutes'
+import { mergeMinutes, parseMinutesDoc, splitTranscript } from '../../domain/minutes'
 import { keepSpoken } from '../../domain/hallucination'
 import { readTranscribeModel } from './transcribeModels'
 
@@ -25,26 +26,66 @@ export type MinutesReply = {
   truncated?: boolean
 }
 
-/**
- * 받아쓴 글로 회의록 초안을 부탁한다.
- *
- * ⚠️ 저장하지 않은 글을 그대로 보낸다. 다른 AI 기능은 함수가 DB 를 다시 읽지만
- *    이건 아직 어디에도 저장돼 있지 않기 때문이다 (민감 회의는 저장 자체를 안 한다).
- */
-export async function callMinutes(payload: {
-  transcript: string
+/** 회의 두 걸음이 공통으로 넘기는 것 */
+type MeetingHead = {
   title?: string
   attendees?: string
   agenda?: string
   myNotes?: string
   glossary?: GlossaryPair[]
-  /** 업무 분류 후보. 「기준 › 설정 › 업무영역」 목록을 그대로 넘긴다 */
-  areas?: string[]
   /** 긴 회의를 나눠 보낼 때, 이번이 몇 번째 구간인지 (1부터) */
   part?: number
   /** 전체 구간 수 */
   parts?: number
-}): Promise<MinutesReply> {
+}
+
+/**
+ * ★ 1걸음 「채굴」 — 받아쓴 글에서 사실만 캐낸다. 요약하지 않는다.
+ *
+ * ── 왜 걸음을 나눴나 (2026-09-08) ───────────────────────
+ * 전에는 받아쓴 글을 그대로 회의록으로 만들라고 한 번에 시켰다. 그랬더니
+ * 회의록이 제목 목록처럼 얇았다. **「줄여라」와 「구성해라」를 동시에 시키면
+ * 줄이는 쪽이 이기기 때문**이다 — 줄이라는 지시는 문장마다 바로 적용되고,
+ * 구성하라는 지시는 다 읽은 뒤에야 쓸 수 있다.
+ *
+ * 그래서 이 걸음에서는 **줄이지 말라고만** 한다. 여기서 나온 글은 사람이
+ * 읽지 않는다. 2걸음(callMinutes)의 재료다.
+ */
+export async function callMine(payload: MeetingHead & { transcript: string }): Promise<MinutesReply> {
+  const { data, error } = await supabase.functions.invoke('ai-assist', {
+    body: { mode: '채굴', ...payload },
+  })
+  if (error) {
+    const detail = await readFunctionError(error)
+    throw new Error(detail ?? error.message)
+  }
+  if (data?.error) throw new Error(String(data.error))
+  return data as MinutesReply
+}
+
+/**
+ * ★ 2걸음 「구성」 — 캐낸 사실 메모를 회사 양식으로 짠다.
+ *
+ * `mined` 를 넘기면 **회의 전체를 한 번에** 본다. 전에는 구간마다 회의록을
+ * 만들어 합쳤기 때문에, 한 안건이 두 구간에 걸치면 앞 구간의 「현재상황」과
+ * 뒤 구간의 「결론」이 따로 놀았다.
+ *
+ * `transcript` 만 넘기면 **예전처럼 한 번에** 만든다 — 1걸음이 실패했을 때의
+ * 뒷걸음질이다. AI 가 죽어도 기록은 남아야 하듯, 한 걸음이 죽어도 회의록은 나와야 한다.
+ *
+ * ⚠️ 저장하지 않은 글을 그대로 보낸다. 다른 AI 기능은 함수가 DB 를 다시 읽지만
+ *    이건 아직 어디에도 저장돼 있지 않기 때문이다 (민감 회의는 저장 자체를 안 한다).
+ */
+export async function callMinutes(
+  payload: MeetingHead & {
+    /** 1걸음이 캐낸 사실 메모 (구간별 결과를 이어 붙인 것) */
+    mined?: string
+    /** 뒷걸음질용 — 1걸음을 못 돌렸을 때의 받아쓴 글 원문 */
+    transcript?: string
+    /** 업무 분류 후보. 「기준 › 설정 › 업무영역」 목록을 그대로 넘긴다 */
+    areas?: string[]
+  },
+): Promise<MinutesReply> {
   const { data, error } = await supabase.functions.invoke('ai-assist', {
     body: { mode: '회의록', ...payload },
   })
@@ -54,6 +95,136 @@ export async function callMinutes(payload: {
   }
   if (data?.error) throw new Error(String(data.error))
   return data as MinutesReply
+}
+
+/**
+ * 받아쓴 글 한 구간의 상한. 1시간 회의가 대략 2만 자다.
+ *
+ * 한 번에 다 넘기면 ① 한도에 걸리고 ② 넘어가도 **가운데가 묽어진다** —
+ * 긴 글일수록 앞부분 지시를 흘린다.
+ */
+const PART_CHARS = 15_000
+
+/** 지금 어느 걸음인가 — 화면이 버튼에 그대로 찍는다 */
+export type MinutesProgress = { at: number; of: number; what: string }
+
+/**
+ * ★ 받아쓴 글 → 회의록 초안. **두 걸음을 여기서 다 돈다.**
+ *
+ * ── 왜 이 함수 하나로 모았나 ─────────────────────────────
+ * 회의록 초안을 만드는 화면이 둘이다 — 지난 회의록(MeetingDetail)과
+ * 실시간 회의(LiveMeeting). 전에는 **각자 부르고 있었고**, 그래서 지난 회의록
+ * 화면에만 구간 나누기가 붙어 있었다. 실시간 화면은 두 시간짜리 회의도
+ * 한 덩어리로 넘기고 있었다.
+ *
+ * 이 저장소는 같은 실수를 이미 겪었다 — 지어낸 말 걸러내기를 네 군데 중
+ * 한 군데에만 붙였다가 나머지 세 길로 그대로 새어 나왔다(2026-08-19).
+ * **부르는 쪽마다 붙이면 언젠가 한 곳을 빠뜨린다.** 그래서 길을 하나로 둔다.
+ *
+ * ── 두 걸음 ──────────────────────────────────────────────
+ *   1걸음 「채굴」  구간별. **요약 금지.** 숫자·산출근거·버린 안·막힌 사유를 캐낸다
+ *   2걸음 「구성」  캐낸 것을 이어 붙여 **회의 전체를 한 번에** 보고 양식으로 짠다
+ *
+ * 전에는 구간마다 회의록을 만들어 합쳤다. 그러면 한 안건이 구간 경계에 걸릴 때
+ * 앞 구간의 「현재상황」과 뒤 구간의 「결론」이 따로 놀았다. 이제 2걸음이 전체를 본다.
+ *
+ * @param onStep 진행 표시. 1걸음이 길어서 아무 말이 없으면 멈춘 줄 안다
+ */
+export async function draftMinutes(v: {
+  transcript: string
+  title?: string
+  attendees?: string
+  agenda?: string
+  myNotes?: string
+  glossary?: GlossaryPair[]
+  /** 업무 분류 후보. 「기준 › 설정 › 업무영역」 목록 */
+  areas?: string[]
+  onStep?: (p: MinutesProgress | null) => void
+}): Promise<{
+  doc: MinutesDoc
+  /** AI 가 준 글 원본. 형식이 어긋나 못 나눴을 때 화면이 이걸 보여 준다 */
+  text: string
+  /** 1걸음이 캐낸 사실 메모 */
+  mined: string
+  model: string
+  truncated?: boolean
+}> {
+  const transcript = v.transcript.trim()
+  if (!transcript) throw new Error('받아쓴 글이 없습니다.')
+
+  const areas = v.areas ?? []
+  const head = {
+    title: v.title,
+    attendees: v.attendees,
+    agenda: v.agenda,
+    glossary: v.glossary,
+  }
+  const chunks = splitTranscript(transcript, PART_CHARS)
+  // 걸음 수 = 채굴 구간 + 구성 1회
+  const steps = chunks.length + 1
+
+  /* ── 1걸음 「채굴」 ──────────────────────────────────── */
+  const mined: string[] = []
+  for (let i = 0; i < chunks.length; i++) {
+    v.onStep?.({ at: i + 1, of: steps, what: '사실 캐내는 중' })
+    const reply = await callMine({
+      ...head,
+      transcript: chunks[i],
+      // 사용자가 회의 중 적은 메모는 **첫 구간에만** 붙인다.
+      // 구간마다 붙이면 같은 메모가 여러 번 캐내져 회의록에 중복으로 남는다
+      myNotes: i === 0 ? v.myNotes : undefined,
+      part: i + 1,
+      parts: chunks.length,
+    })
+    mined.push(reply.text)
+  }
+  const memo = mined.join('\n\n').trim()
+
+  /* ── 2걸음 「구성」 ──────────────────────────────────── */
+  /*
+    캐낸 메모가 한 번에 안 들어갈 만큼 길 때만 갈린다. 보통은 한 덩어리다 —
+    채굴 결과는 받아쓴 글의 1/4~1/3 이라 두 시간짜리 회의도 한 번에 들어간다.
+    한도를 후하게 잡는 이유는 이미 걸러진 글이라 밀도가 높고,
+    여기서 또 자르면 회의 전체를 보게 한 뜻이 없어지기 때문이다.
+  */
+  const memoChunks = splitTranscript(memo, PART_CHARS * 2)
+  const texts: string[] = []
+  const docs: MinutesDoc[] = []
+  let model = ''
+  let truncated = false
+
+  for (let i = 0; i < memoChunks.length; i++) {
+    v.onStep?.({
+      at: steps,
+      of: steps,
+      what: memoChunks.length > 1 ? `회의록 짜는 중 ${i + 1}/${memoChunks.length}` : '회의록 짜는 중',
+    })
+    const reply = await callMinutes({
+      ...head,
+      // 1걸음이 통째로 실패해 캐낸 것이 없으면 받아쓴 글로 예전처럼 만든다.
+      // AI 가 죽어도 기록은 남아야 하듯, 한 걸음이 죽어도 회의록은 나와야 한다
+      ...(memo ? { mined: memoChunks[i] } : { transcript }),
+      myNotes: i === 0 ? v.myNotes : undefined,
+      areas,
+      part: memoChunks.length > 1 ? i + 1 : 0,
+      parts: memoChunks.length > 1 ? memoChunks.length : 0,
+    })
+    texts.push(reply.text)
+    model = reply.model || model
+    truncated = truncated || reply.truncated === true
+    // 등록된 영역 목록을 함께 넘긴다 — 목록 밖의 분류는 여기서 비워진다.
+    // AI 에게 「목록에서만 고르라」고도 하지만 규칙은 안 지켜질 수 있다
+    docs.push(parseMinutesDoc(reply.text, areas))
+  }
+
+  v.onStep?.(null)
+  return {
+    doc: mergeMinutes(docs),
+    text: texts.join('\n\n---\n\n'),
+    mined: memo,
+    model,
+    truncated,
+  }
 }
 
 /**
@@ -155,8 +326,17 @@ export type SaveLiveMeetingInput = {
   transcript: string
   myNotes: string
   durationSec: number
-  /** AI 초안 원본. 확정본과 둘 다 남긴다 — 그 차이가 학습 신호다 */
-  aiDraft: { text: string; minutes: Minutes; model: string } | null
+  /**
+   * AI 초안 원본. 확정본과 둘 다 남긴다 — 그 차이가 학습 신호다.
+   * `mined` 는 1걸음(채굴)이 캐낸 사실 메모다.
+   *
+   * ── 왜 메모까지 남기나 ───────────────────────────────────
+   * 초안과 확정본을 둘 다 저장하는 것과 같은 이유다. 회의록이
+   * 얇게 나왔을 때 **어느 걸음에서 잃었는지**를 이것 없이는 알 수 없다 —
+   * 캐낸 메모에 있는데 회의록에 없으면 2걸음(구성)이 버린 것이고,
+   * 메모에도 없으면 1걸음(채굴)이 못 들은 것이다. 고칠 프롬프트가 갈린다.
+   */
+  aiDraft: { text: string; minutes: Minutes; model: string; mined?: string } | null
   /**
    * 「인박스로」 체크한 것만 담겨 온다.
    *
@@ -264,7 +444,7 @@ export async function updateMeeting(
     agenda?: string | null
     decisions?: string | null
     my_notes?: string | null
-    aiDraft?: { text: string; minutes: Minutes; model: string } | null
+    aiDraft?: { text: string; minutes: Minutes; model: string; mined?: string } | null
     /** 회의록 양식 본문 (결정사항 · Action Item 등) */
     minutes?: MinutesDoc | null
     /**

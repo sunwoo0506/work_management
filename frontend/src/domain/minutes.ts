@@ -248,6 +248,82 @@ function bareTitle(s: string): string {
   return s.replace(/^안건\s*\d+\s*[.)]?\s*/, '').trim()
 }
 
+/* ══════════════════════════════════════════════════════════
+   안건 블록을 읽는 자리 (2026-09-08)
+   ══════════════════════════════════════════════════════════
+
+   전에는 안건 하나가 **세로줄로 나눈 한 줄**이었다.
+     안건 | 현재상황 | 논의내용 | 결론 | 조치사항 | 분류
+
+   그런데 실제 회의록의 「논의내용」에는 이런 것이 들어간다 —
+     · 품목 여러 개의 단가와 **각각의 산출근거**
+     · 검토했다가 버린 안과 **버린 이유**
+     · 왜 못 하는지
+
+   **세로줄 한 칸에 담을 자리가 없다.** 그래서 담기지 못한 것이 그냥
+   사라지고 있었다 — 회의록이 얇았던 가장 큰 이유다.
+
+   이제 안건마다 블록으로 받는다.
+     ### <안건 제목> | <분류>
+     ■ 현재상황
+     - …
+     ■ 논의내용
+     - …
+     - …
+
+   ⚠️ **옛 한 줄 형식도 그대로 읽는다.** 모델은 프롬프트를 바꿔도 옛 버릇대로
+      답할 때가 있고, 이미 저장된 회의록도 있다. 통째로 잃는 것보다
+      읽을 수 있는 만큼 읽는 편이 낫다.
+   ══════════════════════════════════════════════════════════ */
+
+/** 안건 블록 안의 네 칸 */
+type SubKey = 'situation' | 'discussion' | 'conclusion' | 'action'
+
+const SUB_FIELDS: { key: SubKey; words: string[] }[] = [
+  { key: 'situation', words: ['현재상황', '현재 상황', '상황'] },
+  { key: 'discussion', words: ['논의내용', '논의 내용', '논의'] },
+  { key: 'conclusion', words: ['결론', '결정', '결정사항'] },
+  { key: 'action', words: ['조치사항', '조치', '후속조치', '후속 조치'] },
+]
+
+/**
+ * 대괄호로 감싼 줄인가 — `[조치사항]` 처럼.
+ *
+ * ── 왜 이 판정이 필요한가 ────────────────────────────────
+ * **「조치사항」은 두 자리에 다 있는 말이다.** 큰 칸 이름이기도 하고
+ * (전체 조치 목록), 안건 블록 안의 소제목이기도 하다. 구별할 표시가 없으면
+ * 안건 안의 「■ 조치사항」에서 파서가 안건을 빠져나가 버리고,
+ * 그 뒤의 논의가 통째로 조치 목록에 섞인다.
+ *
+ * 그래서 프롬프트가 **큰 칸은 대괄호, 소제목은 ■** 로 쓰게 하고
+ * 여기서 그 표시로 가른다.
+ */
+function isBracketHeading(raw: string): boolean {
+  return /^\s*[[【]\s*[^[\]【】]+\s*[\]】]\s*$/.test(raw.trim())
+}
+
+/** 「### 제목」이나 「안건1. 제목」 — 새 안건이 시작되는 줄인가 */
+function isItemHeader(raw: string): boolean {
+  return /^\s*#{1,6}\s/.test(raw) || /^\s*안건\s*\d+\s*[.)]/.test(raw)
+}
+
+/**
+ * 「■ 논의내용」 · 「논의내용:」 → 어느 칸인가. 소제목이 아니면 null.
+ *
+ * `rest` 는 소제목과 같은 줄에 내용까지 적힌 경우(「논의내용: 원가율 확정」)를 받는다.
+ * 모델이 자주 그렇게 쓰는데, 버리면 그 한 줄이 통째로 사라진다.
+ */
+function subFieldOf(raw: string): { key: SubKey; rest: string } | null {
+  const bare = strip(raw)
+  const m = bare.match(/^(.{1,8}?)\s*[:：]\s*(.+)$/)
+  const name = (m ? m[1] : bare).replace(/\s/g, '')
+  const rest = m ? m[2].trim() : ''
+  for (const f of SUB_FIELDS) {
+    if (f.words.some((w) => w.replace(/\s/g, '') === name)) return { key: f.key, rest }
+  }
+  return null
+}
+
 /**
  * AI 가 준 글을 회의록 양식으로 나눈다.
  *
@@ -272,14 +348,45 @@ export function parseMinutesDoc(text: string, areas?: readonly string[]): Minute
     checks: [],
   }
   let current: string | null = null
+  /** 지금 채우고 있는 안건 블록. out.items 에 이미 들어가 있고 여기서 이어 채운다 */
+  let item: AgendaItem | null = null
+  /** 그 안건의 어느 칸을 채우는 중인가 */
+  let field: SubKey | null = null
+
+  /** 안건 칸에 한 줄 잇는다. 여러 줄이 쌓이므로 줄바꿈으로 잇는다 */
+  const add = (it: AgendaItem, key: SubKey, v: string) => {
+    const clean = dropCitation(v)
+    if (!clean) return
+    it[key] = it[key] ? `${it[key]}\n${clean}` : clean
+  }
 
   for (const raw of text.split('\n')) {
     if (!raw.trim()) continue
 
-    const heading = headingOf(raw)
-    if (heading) {
-      current = heading
-      continue
+    /*
+      안건 블록 안에서는 **소제목(■ …)이 큰 칸 이름보다 먼저다.**
+      「조치사항」이 두 자리에 다 있는 말이라, 대괄호로 감싼 줄만 큰 칸으로 본다.
+      이 순서가 뒤집히면 안건 안의 「■ 조치사항」에서 블록을 빠져나가
+      그 뒤 논의가 통째로 조치 목록에 섞인다.
+    */
+    if (item && current === 'items' && !isBracketHeading(raw) && !isItemHeader(raw)) {
+      const sub = subFieldOf(raw)
+      if (sub) {
+        field = sub.key
+        if (sub.rest) add(item, sub.key, sub.rest)
+        continue
+      }
+    }
+
+    // 「### 제목」은 큰 칸 이름이 아니다 — 「### 안건」이 안건 목록으로 읽히면 안 된다
+    if (!(current === 'items' && isItemHeader(raw))) {
+      const heading = headingOf(raw)
+      if (heading) {
+        current = heading
+        item = null
+        field = null
+        continue
+      }
     }
     if (!current) continue
 
@@ -299,14 +406,44 @@ export function parseMinutesDoc(text: string, areas?: readonly string[]): Minute
         뒤에 붙이면 없어도 읽히고 있으면 읽힌다.
       */
       case 'items': {
-        const parts = line.split('|').map((p) => p.trim())
         /*
-          칸 수를 보고 새 서식과 옛 형식을 가른다.
-            5칸 이상 → 안건 | 현재상황 | 논의내용 | 결론 | 조치사항 | 분류  (새 서식)
-            4칸 이하 → 안건 | 논의내용 | 결론 | 분류                      (옛 형식)
-          프롬프트를 바꿔도 모델은 옛 버릇대로 답할 때가 있다. 그때 통째로
-          잃는 것보다 **읽을 수 있는 만큼 읽는** 편이 낫다.
+          ① 새 안건이 열리는 줄 — 「### 제목 | 분류」 또는 「안건1. 제목」
         */
+        if (isItemHeader(raw)) {
+          const [title, area] = cells(line, 2)
+          item = {
+            title: bareTitle(dropCitation(title)),
+            situation: '',
+            discussion: '',
+            conclusion: '',
+            action: '',
+            area: pickArea(area, areas),
+          }
+          out.items.push(item)
+          /*
+            소제목 없이 바로 내용이 오는 경우가 흔하다. 그때는 **논의내용**으로 본다 —
+            버리는 것보다 낫고, 뒤에 「■ 결론」이 나오면 그때 옮겨 간다.
+          */
+          field = 'discussion'
+          break
+        }
+
+        /*
+          ② 안건 블록 안이면 그 칸에 한 줄 잇는다.
+             세로줄이 있어도 여기서는 **표의 한 행**이다 (「품목 | 단가 | 산출근거」).
+             그래서 칸 나누기보다 이 판정이 먼저다.
+        */
+        if (item && field) {
+          add(item, field, line)
+          break
+        }
+
+        /*
+          ③ 옛 한 줄 형식. 칸 수를 보고 가른다.
+             5칸 이상 → 안건 | 현재상황 | 논의내용 | 결론 | 조치사항 | 분류
+             4칸 이하 → 안건 | 논의내용 | 결론 | 분류
+        */
+        const parts = line.split('|').map((p) => p.trim())
         if (parts.length >= 5) {
           const [title, situation, discussion, conclusion, action, area] = cells(line, 6)
           out.items.push({
@@ -317,7 +454,7 @@ export function parseMinutesDoc(text: string, areas?: readonly string[]): Minute
             action: dropCitation(action),
             area: pickArea(area, areas),
           })
-        } else {
+        } else if (parts.length >= 2) {
           const [title, discussion, conclusion, area] = cells(line, 4)
           out.items.push({
             title: bareTitle(title),
@@ -327,6 +464,21 @@ export function parseMinutesDoc(text: string, areas?: readonly string[]): Minute
             action: '',
             area: pickArea(area, areas),
           })
+        } else {
+          /*
+            ④ 세로줄도 ### 도 없는 맨 줄. **제목만 적은 안건**으로 본다.
+               블록을 열어 두면 뒤따르는 「■ 논의내용」이 여기 담긴다.
+          */
+          item = {
+            title: bareTitle(dropCitation(line)),
+            situation: '',
+            discussion: '',
+            conclusion: '',
+            action: '',
+            area: '',
+          }
+          out.items.push(item)
+          field = null
         }
         break
       }
@@ -559,7 +711,9 @@ export function mergeMinutes(parts: readonly MinutesDoc[]): MinutesDoc {
       items.push({ ...it })
       continue
     }
-    const join = (a: string, b: string) => (!b || a.includes(b) ? a : a ? `${a} / ${b}` : b)
+    // 칸이 여러 줄이 됐으므로 「 / 」가 아니라 줄바꿈으로 잇는다.
+    // 슬래시로 이으면 앞 구간의 논의 열 줄과 뒷 구간의 열 줄이 한 문단으로 뭉갠다
+    const join = (a: string, b: string) => (!b || a.includes(b) ? a : a ? `${a}\n${b}` : b)
     found.situation = join(found.situation, it.situation)
     found.discussion = join(found.discussion, it.discussion)
     found.conclusion = join(found.conclusion, it.conclusion)

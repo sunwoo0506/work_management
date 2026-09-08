@@ -13,19 +13,20 @@ import {
   usedGlossary,
 } from '../../domain/transcript'
 import type { Minutes, Segment } from '../../domain/transcript'
-import { draftView, parseMinutesDoc } from '../../domain/minutes'
+import { draftView } from '../../domain/minutes'
 import { useCompanyId } from '../companies/useCompany'
 import { useRegisteredAreas } from '../areas/useAreaOptions'
 import { useLiveTranscript } from './useLiveTranscript'
 import SpeechCheck from './SpeechCheck'
 import { useRecorder } from './useRecorder'
 import {
-  callMinutes,
+  draftMinutes,
   loadGlossary,
   saveLiveMeeting,
   transcribeChunk,
   uploadMeetingAudio,
 } from './api'
+import type { MinutesProgress } from './api'
 import { appendFinal } from '../../domain/transcript'
 import { TranscribeModelPicker } from './TranscribeModelPicker'
 import { findTranscribeModel, readTranscribeModel, writeTranscribeModel } from './transcribeModels'
@@ -99,7 +100,17 @@ type Saved = {
   /** 회의가 실제로 시작된 벽시계 시각 「HH:MM」. 탭이 닫혔다 열려도 잃지 않게 같이 적어 둔다 */
   startedAt?: string
 }
-type Draft = { text: string; minutes: Minutes; model: string; truncated?: boolean }
+/**
+ * AI 초안. `mined` 는 1걸음(채굴)이 캐낸 사실 메모다 —
+ * 회의록이 얇게 나왔을 때 어느 걸음에서 잃었는지를 알려 주는 유일한 단서다.
+ */
+type Draft = {
+  text: string
+  minutes: Minutes
+  model: string
+  truncated?: boolean
+  mined?: string
+}
 
 export default function LiveMeeting() {
   const companyId = useCompanyId()
@@ -117,6 +128,8 @@ export default function LiveMeeting() {
   const [myNotes, setMyNotes] = useState('')
   const [sensitive, setSensitive] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
+  /** 지금 몇 번째 걸음인가 — 1걸음(사실 캐내기)이 길어서 아무 말이 없으면 멈춘 줄 안다 */
+  const [step, setStep] = useState<MinutesProgress | null>(null)
   const [fix, setFix] = useState({ agenda: '', decisions: '' })
   const [todos, setTodos] = useState<{ text: string; area: string; take: boolean }[]>([])
   const [recovered, setRecovered] = useState<Saved | null>(null)
@@ -276,30 +289,43 @@ export default function LiveMeeting() {
     if (el) el.scrollTop = el.scrollHeight
   }, [live.segments, live.interim, live.status])
 
+  /**
+   * 회의록 초안 — **지난 회의록 화면과 똑같은 길로 간다** (api.ts 의 draftMinutes).
+   *
+   * ── 전에는 여기만 달랐다 ─────────────────────────────────
+   * 지난 회의록 화면에는 구간 나누기가 붙어 있었는데 **이 화면에는 없었다.**
+   * 두 시간짜리 회의도 한 덩어리로 넘기고 있었다. 부르는 쪽마다 따로 짜면
+   * 언젠가 한 곳을 빠뜨린다 — 이 저장소가 이미 겪은 실수다(2026-08-19 받아쓰기).
+   * 이제 두 걸음(채굴 → 구성)을 그 함수 하나가 돈다.
+   */
   const ask = useMutation({
-    mutationFn: async () => {
-      const used = usedGlossary(text, glossary ?? [])
-      return await callMinutes({
+    mutationFn: () =>
+      draftMinutes({
         transcript: text,
         title: meta.title,
         attendees: meta.attendees,
         myNotes,
-        glossary: used,
+        glossary: usedGlossary(text, glossary ?? []),
         // ⚠️ 이걸 안 넘기고 있었다(2026-08-18 발견). 지난 회의록 화면만 넘기고
         //    실시간은 빠져 있어서, AI 가 우리 목록 밖의 분류를 지어냈다
         areas,
-      })
-    },
+        onStep: setStep,
+      }),
     onSuccess: (reply) => {
       /*
-        AI 글을 **회의록 양식으로 한 번만** 나눈다.
-        전에는 여기서 두 벌로 나눴다 — 훑어보기용 네 칸과 양식용. 형식이 바뀔 때마다
-        두 곳을 고쳐야 했고, 실제로 한쪽만 고쳐 놓아 「요약」 칸이 늘 비어 있었다.
-        지금은 양식에서 네 칸을 뽑아 쓴다 (domain/minutes.ts 의 draftView).
+        훑어보기용 네 칸은 **양식에서 뽑아 쓴다.**
+        전에는 두 벌로 나눴다 — 훑어보기용과 양식용. 형식이 바뀔 때마다 두 곳을
+        고쳐야 했고, 실제로 한쪽만 고쳐 놓아 「요약」 칸이 늘 비어 있었다.
       */
-      const doc = parseMinutesDoc(reply.text, areas)
+      const doc = reply.doc
       const minutes = draftView(doc)
-      setDraft({ text: reply.text, minutes, model: reply.model, truncated: reply.truncated })
+      setDraft({
+        text: reply.text,
+        minutes,
+        model: reply.model,
+        truncated: reply.truncated,
+        mined: reply.mined || undefined,
+      })
       setFix({
         agenda: minutes.summary.join('\n'),
         decisions: minutes.decisions.join('\n'),
@@ -319,6 +345,8 @@ export default function LiveMeeting() {
           : minutes.followUps.map((t) => ({ text: t, area: '', take: true })),
       )
     },
+    // 실패해도 진행 표시는 반드시 끈다. 안 끄면 버튼이 「사실 캐내는 중」에 멈춘다
+    onSettled: () => setStep(null),
   })
 
   const save = useMutation({
@@ -339,7 +367,14 @@ export default function LiveMeeting() {
         // 받아쓰기를 한 번도 안 켰으면(직접입력) 시각도 없다. 나중에 손으로 채운다
         startedAt: startedAtRef.current,
         endedAt: startedAtRef.current ? hhmm(new Date()) : null,
-        aiDraft: draft ? { text: draft.text, minutes: draft.minutes, model: draft.model } : null,
+        aiDraft: draft
+          ? {
+              text: draft.text,
+              minutes: draft.minutes,
+              model: draft.model,
+              mined: draft.mined,
+            }
+          : null,
         followUps: todos.filter((t) => t.take).map((t) => ({ text: t.text, area: t.area })),
         sensitive,
         // 받아쓴 글이 없으면 「직접입력」이다 — 나중에 전사문을 붙여넣을 회의록이다
@@ -1092,7 +1127,11 @@ export default function LiveMeeting() {
                 </p>
                 <div className="mt-4">
                   <PillButton type="button" onClick={() => ask.mutate()} disabled={ask.isPending}>
-                    {ask.isPending ? '정리하는 중…' : '회의록 초안 만들기'}
+                    {ask.isPending
+                      ? step
+                        ? `${step.what}… ${step.at}/${step.of}`
+                        : '정리하는 중…'
+                      : '회의록 초안 만들기'}
                   </PillButton>
                 </div>
                 {ask.isError && (

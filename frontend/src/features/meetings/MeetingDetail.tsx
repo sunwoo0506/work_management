@@ -3,25 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Row } from '../../lib/supabase'
 import { Field, PillButton, TextArea, TextInput } from '../../components/Field'
 import { clock, hhmm, mergeIntoTranscript, timeRange, usedGlossary } from '../../domain/transcript'
-import {
-  EMPTY_MINUTES,
-  decisionsOf,
-  mergeMinutes,
-  minutesToText,
-  parseMinutesDoc,
-  splitTranscript,
-} from '../../domain/minutes'
+import { EMPTY_MINUTES, decisionsOf, minutesToText } from '../../domain/minutes'
 import type { ActionItem, MinutesDoc } from '../../domain/minutes'
 import MinutesForm from './MinutesForm'
 import { useCompanyId } from '../companies/useCompany'
 import { TranscribeModelPicker } from './TranscribeModelPicker'
 import { readTranscribeModel, writeTranscribeModel } from './transcribeModels'
 import {
-  callMinutes,
   deleteMeeting,
   deleteMeetingAudio,
   fetchMeetingAudio,
   listMeetingAudio,
+  draftMinutes,
   loadGlossary,
   sendToInbox,
   transcribeChunk,
@@ -74,8 +67,8 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
   const [transcript, setTranscript] = useState(meeting.transcript ?? '')
   const [note, setNote] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  /** 긴 회의를 구간으로 나눠 뽑는 중일 때 「3/7 구간」을 보여 준다 */
-  const [part, setPart] = useState<{ at: number; of: number } | null>(null)
+  /** 지금 몇 번째 걸음인가. `what` 은 「사실 캐내는 중」·「회의록 짜는 중」 */
+  const [part, setPart] = useState<{ at: number; of: number; what: string } | null>(null)
   /** 인박스로 보낼 Action Item (양식의 몇 번째인가) */
   const [picked, setPicked] = useState<Set<number>>(new Set())
 
@@ -128,41 +121,37 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
   })
 
   /**
-   * 전사 내용로 회의록 초안을 만든다.
+   * 전사 내용으로 회의록 초안을 만든다 — **두 걸음으로.**
    *
-   * **긴 회의는 구간으로 나눠 뽑고 합친다.** 한 시간 반짜리 전사문은 3만 자가 넘는데,
-   * 한 번에 넘기면 한도에 걸리거나 **가운데가 묽어져 앞부분 지시를 흘린다.**
-   * 합치는 것은 계산으로 한다 (domain/minutes.ts).
+   * ── 왜 두 걸음인가 (2026-09-08) ─────────────────────────
+   * 전에는 받아쓴 글을 구간으로 잘라 **구간마다 회의록을 만들어 합쳤다.**
+   * 그랬더니 회의록이 제목 목록처럼 얇게 나왔다. 원인이 둘이었다 —
+   *
+   *   ① **한 번에 두 가지 상반된 일을 시켰다.** 「말투·반복을 걷어내라」(줄이기)와
+   *      「안건으로 묶어라」(구성하기)가 붙으면 줄이는 쪽이 이긴다. 그래서
+   *      숫자의 산출근거·검토했다 버린 안·왜 못 하는지가 먼저 잘려 나갔다
+   *   ② **구간마다 회의록을 만드니 아무도 회의 전체를 못 봤다.** 한 안건이
+   *      구간 경계에 걸치면 앞 구간의 「현재상황」과 뒤 구간의 「결론」이 따로 놀았다
+   *
+   * ── 그래서 ───────────────────────────────────────────────
+   *   1걸음 「채굴」  구간별. **요약 금지.** 숫자·근거·버린 안·막힌 사유를 캐낸다
+   *   2걸음 「구성」  캐낸 것을 이어 붙여 **회의 전체를 한 번에** 보고 양식으로 짠다
+   *
+   * 캐낸 메모는 받아쓴 글의 1/4~1/3 이라 두 시간짜리 회의도 2걸음에 한 번에 들어간다.
+   * 그보다 길면 2걸음도 갈리고, 그때만 예전처럼 합친다 (domain/minutes.ts).
    */
   const ask = useMutation({
-    mutationFn: async () => {
-      if (!transcript.trim()) throw new Error('전사문이 없습니다.')
-      const chunks = splitTranscript(transcript, PART_CHARS)
-      const used = usedGlossary(transcript, glossary ?? [])
-      const texts: string[] = []
-      const docs: MinutesDoc[] = []
-
-      for (let i = 0; i < chunks.length; i++) {
-        setPart({ at: i + 1, of: chunks.length })
-        const reply = await callMinutes({
-          transcript: chunks[i],
-          title: meeting.title,
-          attendees: meeting.attendees ?? undefined,
-          agenda: agenda || undefined,
-          myNotes: i === 0 ? (meeting.my_notes ?? undefined) : undefined,
-          glossary: used,
-          areas: areas ?? [],
-          part: i + 1,
-          parts: chunks.length,
-        })
-        texts.push(reply.text)
-        // 등록된 영역 목록을 함께 넘긴다 — 목록 밖의 분류는 여기서 비워진다.
-        // AI 에게 「목록에서만 고르라」고도 하지만 규칙은 안 지켜질 수 있다
-        docs.push(parseMinutesDoc(reply.text, areas))
-      }
-      setPart(null)
-      return { doc: mergeMinutes(docs), text: texts.join('\n\n---\n\n') }
-    },
+    mutationFn: () =>
+      draftMinutes({
+        transcript,
+        title: meeting.title,
+        attendees: meeting.attendees ?? undefined,
+        agenda: agenda || undefined,
+        myNotes: meeting.my_notes ?? undefined,
+        glossary: usedGlossary(transcript, glossary ?? []),
+        areas: areas ?? [],
+        onStep: setPart,
+      }),
     onSuccess: async (reply) => {
       setDoc(reply.doc)
       // 목록에서 한 줄로 훑을 때 쓰는 요약 두 칸도 비어 있으면 채운다
@@ -170,9 +159,21 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
       if (!decisions.trim()) setDecisions(decisionsOf(reply.doc).map((d) => d.text).join('\n'))
       setPicked(new Set(reply.doc.actions.map((_, i) => i)))
 
-      // AI 초안 원본을 굳힌다 — 확정본과의 차이가 「AI 가 뭘 놓쳤나」를 알려주는 신호다
+      /*
+        AI 초안 원본을 굳힌다 — 확정본과의 차이가 「AI 가 뭘 놓쳤나」를 알려주는 신호다.
+
+        **캐낸 사실 메모(mined)도 같이 남긴다.** 회의록이 얇게 나왔을 때
+        어느 걸음에서 잃었는지를 이것 없이는 알 수 없다 —
+        메모에는 있는데 회의록에 없으면 2걸음(구성)이 버린 것이고,
+        메모에도 없으면 1걸음(채굴)이 못 들은 것이다. 고칠 프롬프트가 갈린다.
+      */
       await updateMeeting(meeting.id, {
-        aiDraft: { text: reply.text, minutes: reply.doc as never, model: '' },
+        aiDraft: {
+          text: reply.text,
+          minutes: reply.doc as never,
+          model: '',
+          mined: reply.mined || undefined,
+        },
       })
       setNote('초안을 만들었습니다. 아래에서 고친 뒤 저장하세요.')
       void qc.invalidateQueries({ queryKey: ['meetings'] })
@@ -540,9 +541,13 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
             disabled={ask.isPending}
             onClick={() => ask.mutate()}
           >
+            {/*
+              두 걸음이라 「몇 구간」만으로는 지금 무엇을 하는지 알 수 없다.
+              1걸음(사실 캐내는 중)이 길어서, 그동안 아무 말이 없으면 멈춘 줄 안다
+            */}
             {ask.isPending
-              ? part && part.of > 1
-                ? `정리하는 중… ${part.at}/${part.of} 구간`
+              ? part
+                ? `${part.what}… ${part.at}/${part.of}`
                 : '정리하는 중…'
               : meeting.ai_draft
                 ? 'AI 초안 다시 만들기'
@@ -630,12 +635,6 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
     </div>
   )
 }
-
-/**
- * 한 번에 AI 에게 넘기는 글자 수.
- * 넉넉할수록 회의 흐름을 잘 읽지만, 너무 길면 앞뒤가 묽어진다. 15,000자 ≈ 45분 분량.
- */
-const PART_CHARS = 15_000
 
 /** Action Item 한 줄을 인박스에 넣을 문장으로 */
 function actionLine(a: ActionItem): string {

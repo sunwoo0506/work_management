@@ -289,10 +289,16 @@ describe('mergeMinutes — 구간별 회의록 합치기', () => {
     expect(m.agenda).toEqual(['인상 폭 확인', '대체 거래처'])
   })
 
+  /*
+    2026-09-08 부터 「 / 」가 아니라 **줄바꿈**으로 잇는다.
+    안건의 칸이 한 줄에서 여러 줄로 바뀌었기 때문이다 — 논의내용에 숫자·산출근거·
+    버린 안이 줄줄이 들어간다. 슬래시로 이으면 앞 구간의 열 줄과 뒷 구간의 열 줄이
+    한 문단으로 뭉개져 읽을 수 없다.
+  */
   it('★ 구간에 걸친 같은 안건은 칸끼리 이어 붙인다', () => {
     expect(m.items).toHaveLength(2)
     expect(m.items[0].situation).toBe('12% 통보')
-    expect(m.items[0].discussion).toBe('근거 확인 필요 / 자료를 받아 보기로')
+    expect(m.items[0].discussion).toBe('근거 확인 필요\n자료를 받아 보기로')
     expect(m.items[0].conclusion).toBe('이번 달은 기존 단가')
   })
 
@@ -396,5 +402,144 @@ describe('분류 거르기 — 목록에 없으면 비운다', () => {
     const m = parseMinutesDoc('[조치사항]\n- 견적 | 담당 | 수요일 | 자료 수령 대기', AREAS)
     expect(m.actions[0].note).toBe('자료 수령 대기')
     expect(m.actions[0].area).toBe('')
+  })
+})
+
+/* ══════════════════════════════════════════════════════════
+   안건 블록 (2026-09-08)
+   ══════════════════════════════════════════════════════════
+   전에는 안건 하나가 세로줄로 나눈 **한 줄**이었다. 그래서 「품목 3개 ×
+   단가 × 산출근거」 같은 논의를 담을 자리가 물리적으로 없었고, 담기지 못한
+   것이 그냥 사라졌다 — 회의록이 얇았던 가장 큰 이유다.
+   ══════════════════════════════════════════════════════════ */
+describe('안건 블록 — 안건 하나가 여러 줄이다', () => {
+  const doc = parseMinutesDoc(`[목적]
+- 하반기 구매 계획 확정
+
+[안건]
+- 하반기 물량 추정
+- 자료 검증
+
+[안건별]
+### 하반기 물량 추정 | 구매
+■ 현재상황
+- 상반기 실적이 예년 평균에 크게 못 미침
+■ 논의내용
+- 하반기 물량 5,000개 (작년 하반기 평균)
+- 당초 8,000개를 검토했으나 뒷받침 자료를 받지 못해 평균치를 적용
+- 품목 | 물량 | 산출근거
+- 포장재 | 5,000개 | 작년 하반기 평균
+■ 결론
+- 작년 하반기 평균치로 산정한다
+■ 조치사항
+- 하반기 추정치 반영
+
+### 자료 검증 | 총무
+■ 논의내용
+- 자료별 합계가 서로 다름
+
+[조치사항]
+- 실적 원자료 수령 | 구매담당 | 8월 중 | 자료 수령 대기 | 구매
+
+[미결]
+- 어느 자료를 기준으로 할지
+
+[확인 필요]
+- 합계 수량이 흐릿함`)
+
+  it('★ 논의내용이 여러 줄로 담긴다 — 한 줄 제약이 사라졌다', () => {
+    expect(doc.items[0].discussion.split('\n')).toEqual([
+      '하반기 물량 5,000개 (작년 하반기 평균)',
+      '당초 8,000개를 검토했으나 뒷받침 자료를 받지 못해 평균치를 적용',
+      '품목 | 물량 | 산출근거',
+      '포장재 | 5,000개 | 작년 하반기 평균',
+    ])
+  })
+
+  it('★ 논의내용 안의 세로줄은 표의 한 행이지 칸 나누기가 아니다', () => {
+    expect(doc.items[0].discussion).toContain('포장재 | 5,000개 | 작년 하반기 평균')
+  })
+
+  it('제목과 분류를 「### 제목 | 분류」에서 읽는다', () => {
+    expect(doc.items.map((i) => i.title)).toEqual(['하반기 물량 추정', '자료 검증'])
+    expect(doc.items[0].area).toBe('구매')
+  })
+
+  it('네 칸이 각자 자리에 담긴다', () => {
+    expect(doc.items[0].situation).toBe('상반기 실적이 예년 평균에 크게 못 미침')
+    expect(doc.items[0].conclusion).toBe('작년 하반기 평균치로 산정한다')
+    expect(doc.items[0].action).toBe('하반기 추정치 반영')
+  })
+
+  it('안 나온 칸은 비어 있다 — 채우려고 지어내지 않는다', () => {
+    expect(doc.items[1].situation).toBe('')
+    expect(doc.items[1].conclusion).toBe('')
+  })
+
+  /*
+    ★ 이게 이 파서에서 가장 잘 깨지는 자리다.
+    「조치사항」은 **두 자리에 다 있는 말**이다 — 안건 안의 소제목이기도 하고
+    전체 조치 목록의 큰 칸 이름이기도 하다. 구별을 못 하면 안건 안의
+    「■ 조치사항」에서 파서가 블록을 빠져나가, 그 뒤 논의가 통째로
+    조치 목록에 섞인다. 대괄호로 감싼 줄만 큰 칸으로 본다.
+  */
+  it('★ 안건 안의 「■ 조치사항」이 조치 목록으로 새지 않는다', () => {
+    expect(doc.actions).toHaveLength(1)
+    expect(doc.actions[0].text).toBe('실적 원자료 수령')
+    expect(doc.actions[0].owner).toBe('구매담당')
+    expect(doc.actions[0].note).toBe('자료 수령 대기')
+  })
+
+  it('블록 뒤의 큰 칸들이 제자리에 읽힌다', () => {
+    expect(doc.purpose).toEqual(['하반기 구매 계획 확정'])
+    expect(doc.agenda).toEqual(['하반기 물량 추정', '자료 검증'])
+    expect(doc.pending).toEqual(['어느 자료를 기준으로 할지'])
+    expect(doc.checks).toEqual(['합계 수량이 흐릿함'])
+  })
+})
+
+describe('안건 블록 — 모델이 형식을 어겨도 읽는다', () => {
+  it('옛 한 줄 형식을 그대로 읽는다', () => {
+    const doc = parseMinutesDoc(`[안건별]
+- 단가 인상 | 12% 통보 | 근거 확인 필요 | 기존 단가 유지 | 견적 받기 | 구매`)
+    expect(doc.items).toHaveLength(1)
+    expect(doc.items[0].situation).toBe('12% 통보')
+    expect(doc.items[0].conclusion).toBe('기존 단가 유지')
+  })
+
+  it('「안건1.」 머리로 열어도 블록으로 읽는다', () => {
+    const doc = parseMinutesDoc(`[안건별]
+안건1. 단가 인상
+■ 논의내용
+- 근거를 확인해야 함`)
+    expect(doc.items[0].title).toBe('단가 인상')
+    expect(doc.items[0].discussion).toBe('근거를 확인해야 함')
+  })
+
+  it('소제목에 ■ 가 없어도 읽는다', () => {
+    const doc = parseMinutesDoc(`[안건별]
+### 단가 인상
+논의내용
+- 근거를 확인해야 함
+결론
+- 기존 단가 유지`)
+    expect(doc.items[0].discussion).toBe('근거를 확인해야 함')
+    expect(doc.items[0].conclusion).toBe('기존 단가 유지')
+  })
+
+  it('소제목과 같은 줄에 내용이 붙어 있어도 잃지 않는다', () => {
+    const doc = parseMinutesDoc(`[안건별]
+### 단가 인상
+■ 논의내용: 근거를 확인해야 함
+■ 결론: 기존 단가 유지`)
+    expect(doc.items[0].discussion).toBe('근거를 확인해야 함')
+    expect(doc.items[0].conclusion).toBe('기존 단가 유지')
+  })
+
+  it('소제목 없이 바로 내용이 오면 논의내용으로 본다 — 버리지 않는다', () => {
+    const doc = parseMinutesDoc(`[안건별]
+### 단가 인상
+- 근거를 확인해야 함`)
+    expect(doc.items[0].discussion).toBe('근거를 확인해야 함')
   })
 })
