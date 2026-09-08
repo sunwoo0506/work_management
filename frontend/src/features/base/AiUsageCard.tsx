@@ -22,6 +22,51 @@ import type { UsageRow } from '../../domain/aiUsage'
  * 이 숫자를 전부인 줄 알고, 실제 청구서를 보고 놀란다.
  * 「빈 칸은 눈에 띄지만 잘못 채운 칸은 틀린 줄 모르고 지나간다」와 같은 원칙이다.
  */
+/**
+ * 공급자 대시보드로 **바로 가는 링크** (2026-09-08).
+ *
+ * ── 왜 링크로 두나 ───────────────────────────────────────
+ * 처음에는 「OpenAI 대시보드에서 Admin key 를 만들어…」처럼 **말로만** 적었다.
+ * 부장님이 *"차라리 각각의 대시보드 링크를 넣어줘 바로 들어가서 볼 수 있게"*
+ * 라고 하셨다. 맞는 말이다 — **찾아 들어가는 것 자체가 일**이고,
+ * 안 하게 되는 이유가 대개 그거다.
+ *
+ * ⚠️ 주소가 바뀔 수 있다. 그래서 **깊은 자리 대신 안정적인 자리**로 걸고,
+ *    무엇을 눌러야 하는지는 글로 남긴다.
+ */
+const LINKS = {
+  openaiUsage: 'https://platform.openai.com/usage',
+  openaiAdminKey: 'https://platform.openai.com/settings/organization/admin-keys',
+  googleStudio: 'https://aistudio.google.com/',
+  googleBilling: 'https://console.cloud.google.com/billing',
+}
+
+/**
+ * 이 회사 Supabase 의 **함수 비밀값** 자리.
+ *
+ * 주소를 코드에 박지 않고 접속 주소에서 만든다 — 프로젝트가 바뀌면
+ * 링크도 따라 바뀌어야 하는데, 박아 두면 조용히 남의 프로젝트를 가리킨다.
+ */
+function secretsUrl(): string | null {
+  const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
+  const ref = url?.match(/https:\/\/([a-z0-9]+)\.supabase\./i)?.[1]
+  return ref ? `https://supabase.com/dashboard/project/${ref}/settings/functions` : null
+}
+
+/** 밖으로 나가는 링크. 새 창으로 열고, 그 사실을 화살표로 알린다 */
+function Out({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-action underline underline-offset-2"
+    >
+      {children} ↗
+    </a>
+  )
+}
+
 export default function AiUsageCard() {
   const from = monthStart().toISOString()
 
@@ -192,16 +237,30 @@ export default function AiUsageCard() {
               {(real.currency ?? 'usd').toUpperCase()}
             </strong>{' '}
             — 이번 달, <strong className="font-semibold">조직 전체</strong> 기준입니다.
-            같은 열쇠를 쓰는 다른 프로젝트 비용도 함께 잡힙니다.
+            같은 열쇠를 쓰는 다른 프로젝트 비용도 함께 잡힙니다.{' '}
+            <Out href={LINKS.openaiUsage}>OpenAI 사용량 화면</Out>
           </p>
         ) : real?.error ? (
-          <p className="text-alert">OpenAI 실제 청구액을 못 읽었습니다 — {real.error}</p>
+          <p className="text-alert">
+            OpenAI 실제 청구액을 못 읽었습니다 — {real.error}{' '}
+            <Out href={LINKS.openaiAdminKey}>Admin key 만들기</Out>
+          </p>
         ) : (
           <p>
-            <strong className="font-semibold">OpenAI 실제 청구액 미설정</strong> — 보시려면
-            OpenAI 대시보드에서 <strong className="font-semibold">Admin key</strong> 를 만들어
-            Supabase Secrets 에 <code>OPENAI_ADMIN_KEY</code> 로 넣어 주세요.
-            (평소 쓰는 열쇠와 등급이 다릅니다)
+            <strong className="font-semibold">OpenAI 실제 청구액 미설정</strong> —{' '}
+            <Out href={LINKS.openaiAdminKey}>여기서 Admin key 를 만들어</Out>
+            {secretsUrl() ? (
+              <>
+                {' '}
+                <Out href={secretsUrl() as string}>여기에</Out>
+              </>
+            ) : (
+              ' Supabase › Edge Functions › Secrets 에'
+            )}{' '}
+            <code>OPENAI_ADMIN_KEY</code> 로 넣어 주세요.{' '}
+            <strong className="font-semibold">평소 쓰는 열쇠와 등급이 다릅니다.</strong>{' '}
+            지금 쓰신 금액은 <Out href={LINKS.openaiUsage}>OpenAI 사용량 화면</Out>에서도
+            바로 보실 수 있습니다.
           </p>
         )}
         {/*
@@ -212,11 +271,9 @@ export default function AiUsageCard() {
         */}
         <p>
           <strong className="font-semibold">구글(받아쓰기)은 실제 청구액을 못 불러옵니다</strong>{' '}
-          — 조회 API 가 없고 대시보드로만 봅니다. Google AI Studio 또는 Google Cloud 결제
-          화면에서 확인하세요.{' '}
-          <strong className="font-semibold">
-            거기서 월 지출 상한을 걸 수 있습니다
-          </strong>{' '}
+          — 조회 API 가 없습니다. <Out href={LINKS.googleStudio}>Google AI Studio</Out> 또는{' '}
+          <Out href={LINKS.googleBilling}>Google Cloud 결제</Out> 에서 보세요.{' '}
+          <strong className="font-semibold">AI Studio 에서 월 지출 상한을 걸 수 있습니다</strong>{' '}
           — 걸어 두시면 넘칠 걱정이 없습니다.
         </p>
         <p>

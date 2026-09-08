@@ -660,6 +660,24 @@ export function storageMime(raw: string | undefined, fallback = 'audio/webm'): s
   return fallback
 }
 
+/**
+ * ★ 형식 이름을 **소리 자체에 다시 붙인다** (2026-09-08).
+ *
+ * ── 왜 이게 필요한가 — 여기서 한 번 더 걸렸다 ────────────
+ * 보관함에 올릴 때 `{ contentType: 'audio/mp4' }` 로 알려 주면 될 줄 알았다.
+ * **안 된다.** 파일(Blob)을 그대로 올리면 보관함 라이브러리가 그 옵션을
+ * 쓰지 않고 **파일 자신에 붙은 형식 이름**을 그대로 보낸다.
+ *
+ * 그래서 `storageMime` 로 이름을 바로잡아 넘겨도 아이폰 녹음은 여전히
+ * `audio/x-m4a` 로 올라가 거절당했다 — **고쳤다고 말씀드린 뒤에도 안 됐다.**
+ *
+ * 소리를 **새 껍데기에 담아** 이름을 바꿔 붙이면 그때야 바뀐다.
+ * 내용은 그대로고 이름표만 새로 단다 — 복사가 아니라서 무겁지 않다.
+ */
+function retyped(blob: Blob, mime: string): Blob {
+  return blob.type === mime ? blob : new Blob([blob], { type: mime })
+}
+
 export type MeetingAudio = Row<'meeting_audio'>
 
 /** 미리 등록해 둔 목소리 한 사람 */
@@ -684,7 +702,8 @@ export async function uploadSpeakerVoice(blob: Blob): Promise<string> {
 
   const { error } = await supabase.storage
     .from(AUDIO_BUCKET)
-    .upload(path, blob, { contentType })
+    // ⚠️ 옵션만으로는 안 바뀐다. **소리 자체에** 이름을 다시 붙여 올린다
+    .upload(path, retyped(blob, contentType), { contentType })
   if (error) throw error
   return path
 }
@@ -717,7 +736,8 @@ export async function uploadForTranscribe(meetingId: string, file: File): Promis
 
   const { error } = await supabase.storage
     .from(AUDIO_BUCKET)
-    .upload(path, file, { contentType })
+    // ⚠️ 옵션만으로는 안 바뀐다. **소리 자체에** 이름을 다시 붙여 올린다
+    .upload(path, retyped(file, contentType), { contentType })
   if (error) throw error
   return path
 }
@@ -755,7 +775,8 @@ export async function uploadMeetingAudio(input: {
 
   const { error: upErr } = await supabase.storage
     .from(AUDIO_BUCKET)
-    .upload(path, input.blob, { contentType })
+    // ⚠️ 옵션만으로는 안 바뀐다. **소리 자체에** 이름을 다시 붙여 올린다
+    .upload(path, retyped(input.blob, contentType), { contentType })
   if (upErr) throw upErr
 
   const { error } = await supabase.from('meeting_audio').insert({
