@@ -51,6 +51,23 @@ function isView(v: string | null): v is View {
 export default function RecordPage() {
   const [offset, setOffset] = useState(0)
   const [meetingTab, setMeetingTab] = useState<MeetingTab>('🎙 실시간 받아쓰기')
+  /**
+   * 방금 만든 회의록 (2026-09-08).
+   *
+   * ── 왜 ────────────────────────────────────────────────
+   * 전에는 녹음 파일을 올려 회의록을 만들면 *"「지난 회의록」에서 열어
+   * 수정하고 초안을 작성하세요"* 라고만 했다. **방금 한 일의 결과를 다른
+   * 화면에 두면 찾아가는 것 자체가 일이 되고, 결국 안 본다.**
+   *
+   * 이제 만들자마자 「지난 회의록」으로 넘어가 **그 회의를 펼친 채로** 보여 준다.
+   */
+  const [justMade, setJustMade] = useState<string | null>(null)
+
+  /** 회의록을 만들면 바로 그 자리로 데려간다 */
+  const openMade = (id: string) => {
+    setJustMade(id)
+    setMeetingTab('📋 지난 회의록')
+  }
   // 빠른 입력에서 「＋ 회의록」을 누르면 /record?view=회의록 으로 들어온다
   const [params, setParams] = useSearchParams()
   const raw = params.get('view')
@@ -144,13 +161,13 @@ export default function RecordPage() {
             **실시간 탭만 넓고 나머지는 좁아** 탭을 옮길 때마다 화면이 출렁였다.
             세 탭 모두 같은 2단 배치(본문 + 320px 곁칸)를 쓰므로 폭도 같아야 한다.
           */}
-          {meetingTab === '📝 음성텍스트 가져오기' && <TranscriptPaste />}
+          {meetingTab === '📝 음성텍스트 가져오기' && <TranscriptPaste onMade={openMade} />}
 
-          {meetingTab === '🎧 녹음 파일 올리기' && <AudioUpload />}
+          {meetingTab === '🎧 녹음 파일 올리기' && <AudioUpload onMade={openMade} />}
 
           {meetingTab === '📋 지난 회의록' && (
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 items-start">
-              <MeetingList />
+              <MeetingList openFirst={justMade} />
               <div className="space-y-5">
                 <Card title="여기서 할 수 있는 것">
                   <ul className="space-y-2 text-caption text-ink-mute leading-relaxed">

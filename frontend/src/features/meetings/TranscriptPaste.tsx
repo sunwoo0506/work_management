@@ -40,7 +40,7 @@ function estimate(chars: number): { parts: number; won: number; min: number } {
   return { parts, won: parts * 50, min: Math.max(1, Math.round((parts * 30) / 60)) }
 }
 
-export default function TranscriptPaste() {
+export default function TranscriptPaste({ onMade }: { onMade?: (id: string) => void } = {}) {
   const companyId = useCompanyId()
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -70,7 +70,7 @@ export default function TranscriptPaste() {
       const userId = auth.user?.id
       if (!userId) throw new Error('로그인 정보를 읽지 못했습니다.')
 
-      const { error } = await supabase.from('meetings').insert({
+      const { data, error } = await supabase.from('meetings').insert({
         company_id: companyId,
         user_id: userId,
         met_on: metOn,
@@ -82,10 +82,14 @@ export default function TranscriptPaste() {
         sensitive,
         transcript_source: '직접입력',
       })
+        // 만든 회의의 번호를 받아 온다 — 바로 열어 주려면 이게 있어야 한다
+        .select('id')
+        .single()
       if (error) throw error
+      return data?.id as string | undefined
     },
-    onSuccess: () => {
-      setDone('회의록을 생성했습니다. 「📋 지난 회의록」에서 열어 AI 초안을 작성하세요.')
+    onSuccess: (id) => {
+      setDone('회의록을 만들었습니다. 아래에서 바로 AI 초안을 만드실 수 있습니다.')
       setText('')
       setTitle('')
       setAttendees('')
@@ -94,6 +98,8 @@ export default function TranscriptPaste() {
       setSensitive(false)
       if (fileRef.current) fileRef.current.value = ''
       void qc.invalidateQueries({ queryKey: ['meetings'] })
+      // 방금 만든 회의록을 바로 열어 준다 — 찾아가게 하지 않는다
+      if (id) onMade?.(id)
     },
   })
 

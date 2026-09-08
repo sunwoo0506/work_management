@@ -723,34 +723,53 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
           PDF
         </PillButton>
 
-        {confirmDrop ? (
-          <>
-            <PillButton
+        <button
+          type="button"
+          onClick={() => setConfirmDrop(true)}
+          className="text-caption text-ink-mute hover:text-alert ml-auto"
+        >
+          회의록 삭제
+        </button>
+      </div>
+
+      {/*
+        ★ 지우기 확인은 **저장·내려받기 단추와 다르게 생겨야 한다** (2026-09-08).
+
+        ── 무엇이 문제였나 ──────────────────────────────────
+        전에는 「정말 지웁니다 / 취소」가 **저장·복사·파일·워드·PDF 와 같은 줄에
+        같은 모양(알약 단추)으로** 붙었다. 되돌릴 수 없는 것이 되돌릴 수 있는
+        것들과 똑같이 생긴 것이다 — 손이 먼저 나가면 회의록이 사라진다.
+
+        부장님 지적이다. 그래서 **줄을 내리고, 테를 두르고, 빨간 칸을 만든다.**
+        「정말 지웁니다」라는 말도 바꿨다 — 눌러야 하는 것은 **「삭제」**다.
+      */}
+      {confirmDrop && (
+        <div className="border border-alert rounded-md p-3.5 space-y-2.5">
+          <p className="text-body font-semibold text-alert">이 회의록을 지웁니다</p>
+          <p className="text-caption text-ink-soft leading-relaxed">
+            전사문 · 회의록 본문 · <strong className="font-semibold">보관 중인 음성</strong>이
+            함께 사라집니다. <strong className="font-semibold">되돌릴 수 없습니다.</strong>
+          </p>
+          <div className="flex items-center gap-2 pt-0.5">
+            <button
               type="button"
-              variant="ghost"
-              className="text-alert"
               disabled={dropMeeting.isPending}
               onClick={() => dropMeeting.mutate()}
+              className="text-caption rounded-full px-4 py-1.5 bg-alert text-parchment
+                         font-semibold disabled:opacity-50"
             >
-              {dropMeeting.isPending ? '지우는 중…' : '정말 지웁니다'}
-            </PillButton>
-            <PillButton type="button" variant="ghost" onClick={() => setConfirmDrop(false)}>
-              취소
-            </PillButton>
-            <span className="text-caption text-ink-mute">
-              전사문과 보관 중인 음성이 함께 삭제됩니다.
-            </span>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setConfirmDrop(true)}
-            className="text-caption text-ink-mute hover:text-alert ml-auto"
-          >
-            회의록 삭제
-          </button>
-        )}
-      </div>
+              {dropMeeting.isPending ? '지우는 중…' : '삭제'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDrop(false)}
+              className="text-caption rounded-full px-4 py-1.5 border border-hairline text-ink-soft"
+            >
+              삭제취소
+            </button>
+          </div>
+        </div>
+      )}
 
       {note && <p className="text-caption text-ink-soft">{note}</p>}
       {ask.isError && <p className="text-caption text-alert">{(ask.error as Error).message}</p>}

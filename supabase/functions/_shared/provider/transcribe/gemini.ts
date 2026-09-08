@@ -240,7 +240,69 @@ function readText(json: any): string {
       if (typeof c?.text === 'string') parts.push(c.text)
     }
   }
-  return parts.join(' ').trim()
+  if (parts.length > 0) return parts.join(' ').trim()
+
+  /*
+    ★ 여기까지 못 찾으면 **답 전체를 훑는다** (2026-09-08).
+
+    화자 구분을 켜면 답의 모양이 달라진다. 글이 늘 같은 자리에 있지 않다.
+    자리를 못 찾으면 **빈 글을 돌려주게 되는데, 그러면 오류도 없이
+    전사문이 비어 버린다** — 사용자에게 아무 단서가 없다. 실제로 그랬다.
+
+    모양이 바뀌어도 글은 어딘가에 있다. 못 찾느니 **훑어서라도 건진다.**
+  */
+  return sweep(json).join(' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * 답 어디에 있든 **「누가 말했나 + 무슨 말」이 붙은 것**을 순서대로 줍는다.
+ *
+ * 낱말 하나하나에 화자가 붙어 오기도 하고, 문장 토막에 붙어 오기도 한다.
+ * 둘 다 같은 모양(`speaker` 와 `text` 가 한 덩어리에 있음)이라 함께 잡힌다.
+ */
+function sweepWords(node: any, out: { speaker: string; text: string }[] = [], depth = 0) {
+  if (depth > 8 || node == null) return out
+  if (Array.isArray(node)) {
+    for (const n of node) sweepWords(n, out, depth + 1)
+    return out
+  }
+  if (typeof node !== 'object') return out
+
+  const text = typeof node.text === 'string' ? node.text : ''
+  const speaker = node.speaker
+  if (text.trim() && (typeof speaker === 'string' || typeof speaker === 'number')) {
+    out.push({ speaker: String(speaker), text })
+    // 화자가 붙은 덩어리를 찾았으면 그 안은 더 파지 않는다 — 같은 말을 두 번 줍는다
+    return out
+  }
+
+  for (const v of Object.values(node)) {
+    if (typeof v === 'object') sweepWords(v, out, depth + 1)
+  }
+  return out
+}
+
+/**
+ * 답 어디에 있든 **글로 보이는 것을 그러모은다.**
+ *
+ * 자리를 콕 집어 읽는 것이 맞지만, 못 찾았을 때 **빈 글을 주는 것보다는
+ * 훑어서라도 건지는 편이 낫다.** 받아쓴 말을 잃는 것이 가장 나쁘다.
+ */
+function sweep(node: any, depth = 0): string[] {
+  if (depth > 8 || node == null) return []
+  if (Array.isArray(node)) return node.flatMap((n) => sweep(n, depth + 1))
+  if (typeof node !== 'object') return []
+
+  const out: string[] = []
+  for (const [key, v] of Object.entries(node)) {
+    // 글이 담기는 이름들만 본다 — 아무 문자열이나 주우면 오류 메시지까지 섞인다
+    if ((key === 'text' || key === 'transcript' || key === 'output_text') && typeof v === 'string') {
+      if (v.trim()) out.push(v)
+    } else if (typeof v === 'object') {
+      out.push(...sweep(v, depth + 1))
+    }
+  }
+  return out
 }
 
 /**
@@ -260,18 +322,17 @@ function readText(json: any): string {
  * 못 묶으면 빈 글을 돌려준다 — 부르는 쪽이 평소 글로 되돌아간다.
  */
 function bySpeaker(json: any): string {
-  const words: { speaker: string; text: string }[] = []
+  /*
+    ⚠️ **자리를 콕 집어 읽지 않는다** (2026-09-08).
 
-  for (const step of json?.steps ?? []) {
-    for (const c of step?.content ?? []) {
-      for (const a of c?.annotations ?? []) {
-        if (a?.type !== 'word_info') continue
-        const text = String(a?.text ?? '')
-        if (!text.trim()) continue
-        words.push({ speaker: String(a?.speaker ?? ''), text })
-      }
-    }
-  }
+    화자 표시가 `steps[].content[].annotations[]` 에 온다고 문서에 적혀 있지만,
+    한 겹만 달라져도 **아무것도 못 찾고 빈 글을 돌려주게 된다.** 그러면
+    오류도 없이 전사문이 비어 버린다 — 사용자에게 아무 단서가 없다.
+
+    그래서 **답 전체를 훑어** 「누가 말했나 + 무슨 말」이 붙어 있는 것을 줍는다.
+    모양이 바뀌어도 살아남는다.
+  */
+  const words = sweepWords(json)
   if (words.length === 0) return ''
 
   /*

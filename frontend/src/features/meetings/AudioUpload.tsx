@@ -52,7 +52,7 @@ const WHOLE_MAX_SEC = 30 * 60
  *   ③ 받은 글을 시각 순서대로 이어 회의록으로 저장한다
  *   ④ 실패한 토막은 **버리지 않고** 서버 보관함에 넣는다 — 나중에 다시 받아쓴다
  */
-export default function AudioUpload() {
+export default function AudioUpload({ onMade }: { onMade?: (id: string) => void } = {}) {
   const companyId = useCompanyId()
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -286,7 +286,7 @@ export default function AudioUpload() {
       let wholePath: string | undefined
       if (whole) {
         setStep('소리를 올리는 중…')
-        wholePath = await uploadForTranscribe(meeting.id, file)
+        wholePath = await uploadForTranscribe(companyId, meeting.id, file)
       }
 
       const hint = (glossary ?? []).map((g) => g.term).join(', ').slice(0, 700)
@@ -319,6 +319,23 @@ export default function AudioUpload() {
               // 등록해 둔 목소리가 있으면 「화자1」 대신 이름으로 적힌다
               useNames ? voices : undefined,
             )
+            /*
+              ★ **빈 글이 오면 성공이 아니다** (2026-09-08).
+
+              전에는 빈 글이 오면 **조용히 넘어갔다.** 실패로도 안 세고
+              오류도 안 났다. 그래서 화면에는 「회의록을 만들었습니다」가 뜨고
+              **전사문은 비어 있었다.** 사용자에게는 아무 단서가 없다 —
+              *"전사문도 없고 회의록 내용도 없어"*.
+
+              이건 오늘 아침에 배운 것과 같다 — **빈 결과물을 만들어 주지 않는다.**
+              「됐다」고 말해 놓고 아무것도 없으면 없는 것보다 나쁘다.
+            */
+            if (!text.trim()) {
+              throw new Error(
+                '받아쓴 글이 비어 있습니다. 소리가 너무 작거나, 받아쓰기 쪽이 ' +
+                  '이 형식을 못 읽었을 수 있습니다. 다른 모델로 「다시 변환」해 보세요.',
+              )
+            }
             if (text.trim()) {
               got.set(atMs, text)
               // 구간을 받을 때마다 저장한다 — 중간에 끊겨도 그때까지가 남는다
@@ -375,12 +392,20 @@ export default function AudioUpload() {
         stopRef.current
           ? `중지했습니다. ${got.size}개 구간까지 변환된 내용은 회의록에 저장되어 있습니다.`
           : 실패 === 0
-            ? '회의록을 생성했습니다. 「📋 지난 회의록」에서 열어 수정하고 초안을 작성하세요.'
-            : `${ranges.length}구간 중 ${실패}개를 변환하지 못했습니다. 해당 음성은 회의록에 보관되어 있으므로 이후 다시 변환할 수 있습니다.`,
+            ? '회의록을 만들었습니다. 아래에서 바로 여시거나 고치실 수 있습니다.'
+            : whole
+              ? '변환하지 못했습니다. 소리는 회의록에 보관돼 있으니, 위 오류를 해결하신 뒤 회의록에서 「다시 변환」하시면 됩니다.'
+              : `${ranges.length}구간 중 ${실패}개를 변환하지 못했습니다. 해당 음성은 회의록에 보관되어 있으므로 이후 다시 변환할 수 있습니다.`,
       )
       reset()
       void qc.invalidateQueries({ queryKey: ['meetings'] })
       void qc.invalidateQueries({ queryKey: ['meeting-audio-all'] })
+      /*
+        ★ 방금 만든 회의록을 **바로 열어 준다** (2026-09-08).
+        전에는 「지난 회의록에서 열어 보세요」라고만 했다. 방금 한 일의 결과를
+        다른 화면에 두면, 찾아가는 것 자체가 일이 되고 결국 안 본다.
+      */
+      onMade?.(meeting.id)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStep(null)

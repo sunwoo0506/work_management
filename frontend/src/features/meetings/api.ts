@@ -714,17 +714,29 @@ export async function deleteSpeakerVoice(path: string): Promise<void> {
 }
 
 /**
- * 소리를 보관함에 올리고 **경로만** 돌려준다 (2026-09-08).
+ * 소리를 보관함에 올리고 **소리 목록에 등록**한다 (2026-09-08).
  *
  * 통째로 받아쓸 때 쓴다. 30분짜리 원본은 20~30MB 인데 그걸 서버 함수에
  * 직접 실어 보내면 「너무 큽니다」로 막힌다. 보관함은 큰 파일을 다루라고
  * 있는 곳이고, **이 저장소가 이미 쓰던 길**이다.
  *
- * `meeting_audio` 표에는 넣지 않는다 — 그 표는 「받아쓰기에 실패해 남겨 둔 소리」
- * 목록이고, 여기 올리는 것은 **지금 받아쓸 것**이라 성격이 다르다.
- * 회의록 화면의 「남은 소리」 목록에 섞이면 안 된다.
+ * ── ★ 목록에 등록도 한다 (처음엔 안 했다) ────────────────
+ * 처음에는 파일만 올리고 `meeting_audio` 표에는 **안 넣었다.** 「그 표는
+ * 실패한 소리 목록이니 섞이면 안 된다」고 봤다. **그게 틀렸다.**
+ *
+ * 지출 상한에 걸려 변환이 실패했더니 — 소리는 보관함에 **올라가 있는데
+ * 표에 없어서 화면에 안 보였다.** 「다시 변환」을 누를 수조차 없었다.
+ * 사용자에게는 *"전사문도 없고 회의록 내용도 없다"* 로만 보였다.
+ * **되찾을 길이 없는 파일을 만든 셈이다.**
+ *
+ * 그래서 올리자마자 등록한다. 덤으로 **모델을 바꿔 다시 받아쓰는 것도**
+ * 그 자리에서 된다 — 어느 모델이 나은지 재 보는 데 쓰인다.
  */
-export async function uploadForTranscribe(meetingId: string, file: File): Promise<string> {
+export async function uploadForTranscribe(
+  companyId: string,
+  meetingId: string,
+  file: File,
+): Promise<string> {
   const { data: auth } = await supabase.auth.getUser()
   const userId = auth.user?.id
   if (!userId) throw new Error('로그인 정보를 읽지 못했습니다.')
@@ -739,6 +751,25 @@ export async function uploadForTranscribe(meetingId: string, file: File): Promis
     // ⚠️ 옵션만으로는 안 바뀐다. **소리 자체에** 이름을 다시 붙여 올린다
     .upload(path, retyped(file, contentType), { contentType })
   if (error) throw error
+
+  /*
+    ★ 목록에도 넣는다. 넣지 않으면 **화면에서 보이지 않아 되찾을 수 없다.**
+    표에 못 적었다고 받아쓰기를 막지는 않는다 — 소리는 이미 올라가 있고,
+    변환이 되면 그게 더 중요하다. 대신 조용히 넘어가지 않고 남긴다.
+  */
+  const { data: auth2 } = await supabase.auth.getUser()
+  const { error: rowErr } = await supabase.from('meeting_audio').insert({
+    company_id: companyId,
+    user_id: auth2.user?.id as string,
+    meeting_id: meetingId,
+    at_ms: 0,
+    reason: '안전망',
+    path,
+    bytes: file.size,
+    mime: contentType,
+  })
+  if (rowErr) console.error('소리 목록 등록 실패(무시):', rowErr)
+
   return path
 }
 
