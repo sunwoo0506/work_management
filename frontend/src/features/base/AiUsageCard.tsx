@@ -72,7 +72,9 @@ export default function AiUsageCard() {
     <Card title="AI 사용량" count={s.calls}>
       <p className="text-caption text-ink-mute mb-4">
         {month} 1일부터 지금까지. <strong className="font-semibold">어느 기능이 얼마나
-        썼는지</strong>를 보는 자리입니다 — 실제 청구액은 공급자 결제 화면이 원본입니다.
+        썼는지</strong>를 보는 자리입니다. 이 툴은 <strong className="font-semibold">두 회사를
+        같이 씁니다</strong> — 글은 OpenAI, 받아쓰기는 구글. 실제 청구액은 공급자 결제
+        화면이 원본입니다.
       </p>
 
       {/*
@@ -101,6 +103,18 @@ export default function AiUsageCard() {
               이 툴 어림값 · 호출 {s.calls.toLocaleString()}회
               {s.failed > 0 && <> · 실패 {s.failed}회</>}
             </span>
+            {/*
+              ★ 회사별로 갈라 보여 준다 (2026-09-08).
+              이 툴은 **두 회사를 같이 쓴다** — 글은 OpenAI, 받아쓰기는 구글.
+              그런데 아래 「실제 청구액」은 **OpenAI 것만** 물어볼 수 있다.
+              갈라 두지 않으면 사용자가 그 둘을 견주려 하는데, 애초에
+              세는 범위가 다르다.
+            */}
+            {s.vendors.length > 1 && (
+              <span className="text-caption text-ink-mute w-full">
+                {s.vendors.map((v) => `${v.vendor} ${won(v.won)}`).join('  ·  ')}
+              </span>
+            )}
           </div>
 
           {/*
@@ -174,21 +188,37 @@ export default function AiUsageCard() {
         {real?.configured && typeof real.amount === 'number' ? (
           <p>
             <strong className="font-semibold text-ink">
-              공급자 실제 청구액 {real.amount.toFixed(2)} {(real.currency ?? 'usd').toUpperCase()}
+              OpenAI 실제 청구액 {real.amount.toFixed(2)}{' '}
+              {(real.currency ?? 'usd').toUpperCase()}
             </strong>{' '}
             — 이번 달, <strong className="font-semibold">조직 전체</strong> 기준입니다.
             같은 열쇠를 쓰는 다른 프로젝트 비용도 함께 잡힙니다.
           </p>
         ) : real?.error ? (
-          <p className="text-alert">실제 청구액을 못 읽었습니다 — {real.error}</p>
+          <p className="text-alert">OpenAI 실제 청구액을 못 읽었습니다 — {real.error}</p>
         ) : (
           <p>
-            <strong className="font-semibold">실제 청구액 미설정</strong> — 보시려면
+            <strong className="font-semibold">OpenAI 실제 청구액 미설정</strong> — 보시려면
             OpenAI 대시보드에서 <strong className="font-semibold">Admin key</strong> 를 만들어
             Supabase Secrets 에 <code>OPENAI_ADMIN_KEY</code> 로 넣어 주세요.
             (평소 쓰는 열쇠와 등급이 다릅니다)
           </p>
         )}
+        {/*
+          ★ 구글은 조회 API 가 없다 (2026-09-08 확인).
+          「실제 청구액」이 OpenAI 것만이라는 사실을 여기서 못 박는다.
+          안 밝히면 사용자가 그 숫자를 전부인 줄 안다 — 받아쓰기는 구글이고,
+          받아쓰기가 이 툴에서 제일 비싼 길이다.
+        */}
+        <p>
+          <strong className="font-semibold">구글(받아쓰기)은 실제 청구액을 못 불러옵니다</strong>{' '}
+          — 조회 API 가 없고 대시보드로만 봅니다. Google AI Studio 또는 Google Cloud 결제
+          화면에서 확인하세요.{' '}
+          <strong className="font-semibold">
+            거기서 월 지출 상한을 걸 수 있습니다
+          </strong>{' '}
+          — 걸어 두시면 넘칠 걱정이 없습니다.
+        </p>
         <p>
           <strong className="font-semibold">여기서 못 재는 것</strong> — 저장소 용량 ·
           DB 용량 · Edge Function 호출 수. 공급자 대시보드에서 확인하세요.

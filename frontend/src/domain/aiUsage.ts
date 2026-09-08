@@ -82,6 +82,54 @@ export function wonOf(row: UsageRow): number {
   return ((row.tokens_in ?? 0) / 1000) * p.in + ((row.tokens_out ?? 0) / 1000) * p.out
 }
 
+/**
+ * 어느 회사 AI 인가 — 모델 이름으로 가른다 (2026-09-08).
+ *
+ * ── 왜 필요한가 ──────────────────────────────────────────
+ * 이 툴은 **두 회사를 같이 쓴다.** 글 부르기는 OpenAI, 받아쓰기는 구글이다.
+ * 그런데 실제 청구액을 물어볼 수 있는 곳은 **OpenAI 뿐**이다 — 구글은
+ * 대시보드로만 볼 수 있고 조회 API 가 없다.
+ *
+ * 그래서 어림값이라도 **회사별로 갈라 보여 줘야** 한다. 안 그러면
+ * 「실제 청구액 12달러」 옆에 「어림값 3만원」이 붙어, 사용자가 그 둘을
+ * 견주려 하는데 **애초에 세는 범위가 다르다.**
+ */
+export type Vendor = 'OpenAI' | '구글' | '모름'
+
+export function vendorOf(model: string): Vendor {
+  if (!model) return '모름'
+  if (model.startsWith('gemini')) return '구글'
+  if (model.startsWith('gpt') || model.startsWith('whisper') || model.startsWith('o')) {
+    return 'OpenAI'
+  }
+  return '모름'
+}
+
+export type VendorTotal = {
+  vendor: Vendor
+  calls: number
+  won: number
+  /** 단가를 모르는 호출 수 — 그만큼 금액이 적게 잡힌다 */
+  unpriced: number
+}
+
+/** 회사별로 묶어 센다. 많이 쓴 순서 */
+export function byVendor(rows: readonly UsageRow[]): VendorTotal[] {
+  const map = new Map<Vendor, VendorTotal>()
+  for (const r of rows) {
+    const v = vendorOf(r.model)
+    let t = map.get(v)
+    if (!t) {
+      t = { vendor: v, calls: 0, won: 0, unpriced: 0 }
+      map.set(v, t)
+    }
+    t.calls += 1
+    t.won += wonOf(r)
+    if (!isPriced(r)) t.unpriced += 1
+  }
+  return [...map.values()].sort((a, b) => b.won - a.won || b.calls - a.calls)
+}
+
 export type FeatureTotal = {
   feature: string
   calls: number
@@ -144,6 +192,8 @@ export type UsageSummary = {
   won: number
   unpriced: number
   unknownLength: number
+  /** 회사별 — OpenAI 와 구글을 갈라 본다 */
+  vendors: VendorTotal[]
   /**
    * 단가표에 없는 **모델 이름들.**
    *
@@ -162,6 +212,7 @@ export function summarize(rows: readonly UsageRow[]): UsageSummary {
   }
   return {
     totals,
+    vendors: byVendor(rows),
     calls: totals.reduce((n, t) => n + t.calls, 0),
     failed: totals.reduce((n, t) => n + t.failed, 0),
     won: totals.reduce((n, t) => n + t.won, 0),

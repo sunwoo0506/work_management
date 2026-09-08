@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { byFeature, hours, isPriced, monthStart, summarize, won, wonOf } from '../aiUsage'
+import {
+  byFeature,
+  byVendor,
+  hours,
+  isPriced,
+  monthStart,
+  summarize,
+  vendorOf,
+  won,
+  wonOf,
+} from '../aiUsage'
 import type { UsageRow } from '../aiUsage'
 
 const row = (v: Partial<UsageRow>): UsageRow => ({
@@ -164,5 +174,41 @@ describe('단가표에 없는 모델 — 이름을 알려 준다', () => {
     expect(isPriced(row({ model: 'gpt-5.6-sol' }))).toBe(true)
     expect(isPriced(row({ model: 'gpt-5.6-terra' }))).toBe(true)
     expect(isPriced(row({ feature: '전사', model: 'gemini-3.5-transcribe', audio_sec: 60 }))).toBe(true)
+  })
+})
+
+/*
+  ★ 이 툴은 두 회사를 같이 쓴다 — 글은 OpenAI, 받아쓰기는 구글.
+  그런데 실제 청구액을 물어볼 수 있는 곳은 OpenAI 뿐이다(구글은 조회 API 가 없다).
+  그래서 어림값이라도 **회사별로 갈라** 보여 줘야, 「실제 청구액」과
+  「어림값」의 세는 범위가 다르다는 게 드러난다.
+*/
+describe('회사별로 가른다 — OpenAI 와 구글', () => {
+  it('모델 이름으로 어느 회사인지 가린다', () => {
+    expect(vendorOf('gpt-5.6-sol')).toBe('OpenAI')
+    expect(vendorOf('whisper-1')).toBe('OpenAI')
+    expect(vendorOf('gemini-3.5-transcribe')).toBe('구글')
+    expect(vendorOf('')).toBe('모름')
+    expect(vendorOf('처음-보는-모델')).toBe('모름')
+  })
+
+  it('회사별로 호출 수와 금액을 모은다', () => {
+    const v = byVendor([
+      row({ model: 'gpt-5.6-sol', tokens_in: 1000, tokens_out: 1000 }),
+      row({ feature: '전사', model: 'gemini-3.5-transcribe', audio_sec: 600 }),
+      row({ feature: '전사', model: 'gemini-3.5-transcribe', audio_sec: 600 }),
+    ])
+    const 구글 = v.find((x) => x.vendor === '구글')
+    const openai = v.find((x) => x.vendor === 'OpenAI')
+    expect(구글?.calls).toBe(2)
+    expect(구글?.won).toBeCloseTo(170, 5) // 10분 * 8.5 * 2
+    expect(openai?.calls).toBe(1)
+    expect(openai?.won).toBeCloseTo(15.8, 5)
+  })
+
+  it('요약에도 회사별이 들어 있다', () => {
+    const s = summarize([row({ feature: '전사', model: 'gemini-3.5-transcribe', audio_sec: 60 })])
+    expect(s.vendors).toHaveLength(1)
+    expect(s.vendors[0].vendor).toBe('구글')
   })
 })
