@@ -629,6 +629,37 @@ export async function loadGlossary(companyId: string): Promise<GlossaryPair[]> {
 
 const AUDIO_BUCKET = 'meeting-audio'
 
+/**
+ * 보관함이 받아 주는 형식 이름으로 바꾼다 (2026-09-08).
+ *
+ * ── 왜 필요한가 ──────────────────────────────────────────
+ * 보관함은 **허용 목록과 글자 그대로** 맞춰 본다 —
+ * `audio/webm` · `audio/ogg` · `audio/mp4` · `audio/mpeg` · `audio/wav`.
+ *
+ * 그런데 브라우저·운영체제가 붙이는 이름은 그보다 훨씬 여러 가지다.
+ * 아이폰 녹음 파일을 고르면 **`audio/x-m4a`** 로 온다. 그러면
+ * **「mime type audio/x-m4a is not supported」로 거절당한다.**
+ *
+ * 실제로 2026-09-08 에 이것 때문에 통째 전사가 통째로 막혔다. 그전에도
+ * 같은 자리에서 한 번 겪었는데(2026-08-16, `;codecs=opus` 꼬리표),
+ * 그때는 **꼬리표만 떼고** 이름 자체는 안 봤다. 그래서 또 걸렸다.
+ *
+ * ⚠️ **여기 한 곳에서만 바꾼다.** 올리는 자리가 셋이라 각자 처리하면
+ *    언젠가 한 곳을 빠뜨린다.
+ */
+export function storageMime(raw: string | undefined, fallback = 'audio/webm'): string {
+  const t = (raw || '').toLowerCase().split(';')[0].trim()
+  if (!t) return fallback
+  // m4a · aac · mp4 계열은 전부 audio/mp4 로 (x-m4a, m4a, mp4, aac …)
+  if (t.includes('m4a') || t.includes('mp4') || t.includes('aac')) return 'audio/mp4'
+  if (t.includes('ogg')) return 'audio/ogg'
+  if (t.includes('wav')) return 'audio/wav'
+  if (t.includes('mpeg') || t.includes('mp3')) return 'audio/mpeg'
+  if (t.includes('webm')) return 'audio/webm'
+  // 처음 보는 이름이면 기본값으로. 거절당하는 것보다 낫다
+  return fallback
+}
+
 export type MeetingAudio = Row<'meeting_audio'>
 
 /** 미리 등록해 둔 목소리 한 사람 */
@@ -649,7 +680,7 @@ export async function uploadSpeakerVoice(blob: Blob): Promise<string> {
   const ext = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm'
   // 이름을 파일명에 쓰지 않는다 — 실명이 경로에 남는다
   const path = `${userId}/speakers/${Date.now()}.${ext}`
-  const contentType = (blob.type || 'audio/webm').split(';')[0].trim()
+  const contentType = storageMime(blob.type)
 
   const { error } = await supabase.storage
     .from(AUDIO_BUCKET)
@@ -681,8 +712,8 @@ export async function uploadForTranscribe(meetingId: string, file: File): Promis
 
   const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] ?? 'm4a').toLowerCase()
   const path = `${userId}/${meetingId}/whole-${Date.now()}.${ext}`
-  // 형식 이름 뒤에 붙은 설명을 떼고 올린다 — 보관함이 글자 그대로 맞춰 본다
-  const contentType = (file.type || 'audio/mp4').split(';')[0].trim()
+  // ⚠️ 아이폰 녹음은 `audio/x-m4a` 로 온다. 그대로 올리면 보관함이 거절한다
+  const contentType = storageMime(file.type, 'audio/mp4')
 
   const { error } = await supabase.storage
     .from(AUDIO_BUCKET)
@@ -720,7 +751,7 @@ export async function uploadMeetingAudio(input: {
     실제로 이것 때문에 소리가 한 개도 안 올라갔다 (2026-08-16).
     화면에는 회의록만 저장되고 소리는 조용히 사라졌다.
   */
-  const contentType = (input.blob.type || 'audio/webm').split(';')[0].trim()
+  const contentType = storageMime(input.blob.type)
 
   const { error: upErr } = await supabase.storage
     .from(AUDIO_BUCKET)
