@@ -89,7 +89,7 @@ export default function TranscriptPaste({ onMade }: { onMade?: (id: string) => v
       return data?.id as string | undefined
     },
     onSuccess: (id) => {
-      setDone('회의록을 만들었습니다. 아래에서 바로 AI 초안을 만드실 수 있습니다.')
+      setDone('회의록을 만들었습니다. 「📋 지난 회의록」으로 넘어가 바로 펼쳐 드립니다.')
       setText('')
       setTitle('')
       setAttendees('')
