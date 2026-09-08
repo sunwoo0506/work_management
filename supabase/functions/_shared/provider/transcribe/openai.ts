@@ -173,7 +173,9 @@ export function createOpenAITranscriber(): Transcriber {
           buf.push(text)
         }
         flush()
-        if (lines.length > 0) return { text: lines.join('\n'), segments: [], model }
+        if (lines.length > 0) {
+          return { text: lines.join('\n'), segments: [], model, diarized: true }
+        }
       }
 
       return { text: whole, segments, model }

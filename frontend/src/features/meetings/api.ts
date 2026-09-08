@@ -272,6 +272,7 @@ export async function transcribeChunk(
   onWait?: (sec: number) => void,
   audioPath?: string,
   speakers?: SpeakerVoice[],
+  onDiarizeFailed?: () => void,
 ): Promise<string> {
   const use = model || readTranscribeModel()
 
@@ -311,6 +312,11 @@ export async function transcribeChunk(
         const text = await waitForJob(String(data.jobId), use, diarize, onWait)
         return keepSpoken(text, null)
       }
+      /*
+        화자를 갈라 달라고 했는데 안 갈라졌으면 알려 준다 (2026-09-08).
+        조용히 넘어가면 「제미나이 화자구분 체크했는데 화자구분이 안 되고 있다」가 된다.
+      */
+      if (data?.diarizeAsked && data?.diarized === false) onDiarizeFailed?.()
       // 확신도가 낮은 토막을 떨어내고 남은 글만 돌려준다.
       // 서버가 숫자를 안 주면(옛 판) 낱말 목록으로만 거른다
       return keepSpoken(String(data?.text ?? ''), data?.segments ?? null)

@@ -63,8 +63,13 @@ export function createGeminiTranscriber(): Transcriber {
       if (jobId) {
         const got = await reread(key, jobId)
         if (pending(got)) return { text: '', segments: [], model, pending: true, jobId }
-        const text = diarize ? bySpeaker(got) || readText(got) : readText(got)
-        return { text, segments: [], model }
+        const spoken = diarize ? bySpeaker(got) : ''
+        return {
+          text: spoken || readText(got),
+          segments: [],
+          model,
+          diarized: !!spoken,
+        }
       }
 
       /*
@@ -144,8 +149,13 @@ export function createGeminiTranscriber(): Transcriber {
         묶지 못하면(공급자가 안 줬거나 형태가 바뀌었으면) 평소 글로 되돌아간다 —
         화자 표시를 못 얻었다고 받아쓴 글까지 잃으면 안 된다.
       */
-      const text = diarize ? (bySpeaker(json) || readText(json)) : readText(json)
-      return { text, segments: [], model }
+      const spoken = diarize ? bySpeaker(json) : ''
+      return {
+        text: spoken || readText(json),
+        segments: [],
+        model,
+        diarized: !!spoken,
+      }
     },
   }
 }

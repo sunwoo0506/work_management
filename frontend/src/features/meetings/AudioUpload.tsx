@@ -74,6 +74,8 @@ export default function AudioUpload({ onMade }: { onMade?: (id: string) => void 
   const [diarize, setDiarize] = useState(true)
   /** 통째로 보냈을 때 몇 초째 기다리는 중인가. 아무 말이 없으면 멈춘 줄 안다 */
   const [waited, setWaited] = useState(0)
+  /** 화자 구분을 켰는데 **안 갈라져** 왔나. 조용히 넘어가면 「왜 안 되지」로 끝난다 */
+  const [diarizeFailed, setDiarizeFailed] = useState(false)
 
   /** 회의 중 직접 적은 메모. 전사문과 섞지 않는다 */
   const [myNotes, setMyNotes] = useState('')
@@ -227,6 +229,7 @@ export default function AudioUpload({ onMade }: { onMade?: (id: string) => void 
     setBusy(true)
     setError(null)
     setDone(null)
+    setDiarizeFailed(false)
     stopRef.current = false
     setStartedAt(Date.now())
     setDoneCount(0)
@@ -318,6 +321,8 @@ export default function AudioUpload({ onMade }: { onMade?: (id: string) => void 
               whole ? wholePath : undefined,
               // 등록해 둔 목소리가 있으면 「화자1」 대신 이름으로 적힌다
               useNames ? voices : undefined,
+              // 화자를 갈라 달라고 했는데 안 갈라졌으면 알려 준다
+              () => setDiarizeFailed(true),
             )
             /*
               ★ **빈 글이 오면 성공이 아니다** (2026-09-08).
@@ -592,6 +597,19 @@ export default function AudioUpload({ onMade }: { onMade?: (id: string) => void 
             </div>
 
             {done && <p className="text-caption text-ink-soft leading-relaxed">{done}</p>}
+            {/*
+              ★ 켰는데 안 된 것을 **밝힌다** (2026-09-08).
+              전에는 조용히 넘어가서 「제미나이 화자구분 체크했는데 안 되고 있다」가 됐다.
+            */}
+            {diarizeFailed && (
+              <p className="text-caption text-alert leading-relaxed">
+                ⚠️ 화자 구분을 켰지만 <strong className="font-semibold">화자가 나뉘지
+                않았습니다.</strong> 받아쓰기 쪽이 그 설정을 받아 주지 않았을 수 있습니다.
+                받아쓴 글 자체는 정상입니다 — 회의록 화면에서{' '}
+                <strong className="font-semibold">「GPT 화자 구분」 모델로 「다시 변환」</strong>
+                해 보시면 됩니다.
+              </p>
+            )}
             {error && <p className="text-caption text-alert leading-relaxed">{error}</p>}
           </div>
         </Card>

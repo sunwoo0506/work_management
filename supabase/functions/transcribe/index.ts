@@ -239,7 +239,11 @@ Deno.serve(async (req) => {
       ⚠️ **주는 모델과 안 주는 모델이 있다** — whisper-1 만 준다. 없으면 빈 배열이고,
          화면은 그때 낱말 목록으로만 거른다 (domain/hallucination.ts).
     */
-    return json(result)
+    /*
+      화자를 갈라 달라고 했는데 **안 갈라졌으면 그 사실을 돌려준다** (2026-09-08).
+      아무 말이 없으면 「켰는데 왜 안 되지」로 끝난다.
+    */
+    return json({ ...result, diarizeAsked: diarize })
   } catch (e) {
     if (e instanceof TranscribeError) {
       console.error('transcribe failed', e.status, e.raw)
