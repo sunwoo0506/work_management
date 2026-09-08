@@ -6,6 +6,7 @@ import { Card } from '../../components/ui'
 import { PillButton, TextInput } from '../../components/Field'
 import { useCompanyId } from '../companies/useCompany'
 import PasswordCard from '../auth/PasswordCard'
+import AiUsageCard from './AiUsageCard'
 
 /**
  * 설정 — 업체별 키-값.
@@ -80,6 +81,12 @@ export default function SettingsPanel() {
           onChange={(next) => save.mutate({ key: 'glossary', value: next })}
         />
       </Card>
+
+      {/*
+        AI 사용량도 회사별 설정이 아니라 **내 계정**의 것이다.
+        고치는 칸(업무영역·용어집) 뒤, 보기만 하는 칸으로 둔다.
+      */}
+      <AiUsageCard />
 
       {/* 로그인 방법은 회사별 설정이 아니라 **내 계정**의 것이라 맨 아래에 둔다 */}
       <PasswordCard />

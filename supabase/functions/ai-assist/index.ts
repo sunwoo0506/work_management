@@ -1,7 +1,8 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { getProvider } from '../_shared/provider/index.ts'
-import type { ChatMessage } from '../_shared/provider/index.ts'
+import { metered } from '../_shared/usage.ts'
+import type { ChatMessage, Provider } from '../_shared/provider/index.ts'
 import {
   ASK_RULES,
   ASK_RULES_WEB,
@@ -64,6 +65,19 @@ Deno.serve(async (req) => {
       )
     }
 
+    /*
+      ★ AI 사용량 기록 — **공급자를 감싸서** 붙인다 (_shared/usage.ts).
+
+      부르는 쪽마다 기록 코드를 붙이면 언젠가 한 곳을 빠뜨린다. 이 저장소는
+      그걸 두 번 겪었다(8/19 걸러내기, 9/8 구간 나누기). AI 를 부르는 길은
+      `provider.chat()` 하나뿐이므로 **그것만 감싸면 빠져나갈 구멍이 없다.**
+      새 기능을 붙이는 사람이 usage.ts 를 몰라도 기록은 남는다.
+
+      `mode` 를 그대로 「어느 기능이 썼나」로 남긴다 — 이름을 두 벌로 부르면
+      반드시 어긋난다.
+    */
+    const provider = metered(getProvider(), db, userData.user.id, mode)
+
     /**
      * 회의 관련 두 모드(채굴 · 회의록)만 자료를 **브라우저에서 받는다.**
      *
@@ -74,15 +88,13 @@ Deno.serve(async (req) => {
      *
      * 밀어 넣어도 새는 것이 없다 — 자기가 방금 말한 것을 자기가 요약받을 뿐이다.
      */
-    if (mode === '채굴') return await mine(body)
-    if (mode === '회의록') return await minutes(body)
+    if (mode === '채굴') return await mine(body, provider)
+    if (mode === '회의록') return await minutes(body, provider)
 
     if (!taskId) return json({ error: '어느 업무인지가 없습니다.' }, 400)
 
     const ctx = await buildContext(db, taskId, body?.attachmentIds ?? null)
     if (!ctx) return json({ error: '그 업무를 찾지 못했습니다.' }, 404)
-
-    const provider = getProvider()
 
     /**
      * 웹 검색은 **질문일 때만, 그리고 사용자가 켰을 때만** 켠다.
@@ -202,7 +214,7 @@ function glossaryCount(body: any): number {
  * 이 걸음의 결과는 **사람이 읽지 않는다.** 2걸음의 재료다.
  * 그래서 형식을 파싱하지 않고 글 그대로 돌려준다 — 2걸음에 그대로 넘어간다.
  */
-async function mine(body: any) {
+async function mine(body: any, provider: Provider) {
   const transcript = String(body?.transcript ?? '').trim()
   if (!transcript) return json({ error: '받아쓴 글이 없습니다.' }, 400)
 
@@ -210,7 +222,6 @@ async function mine(body: any) {
   const parts = Number(body?.parts ?? 0)
   const partNote = parts > 1 && part > 0 ? MINE_PART_NOTE(part, parts) : ''
 
-  const provider = getProvider()
   const result = await provider.chat(
     [
       { role: 'system', content: MINE_RULES },
@@ -255,7 +266,7 @@ async function mine(body: any) {
  * `domain/minutes.ts` 가 한다 — 그래야 브라우저·AI 없이 시험할 수 있고,
  * 형식이 어긋나 못 나눴을 때 화면이 원문을 그대로 보여 줄 수 있다.
  */
-async function minutes(body: any) {
+async function minutes(body: any, provider: Provider) {
   const mined = String(body?.mined ?? '').trim()
   const transcript = String(body?.transcript ?? '').trim()
   const source = mined || transcript
@@ -287,7 +298,6 @@ async function minutes(body: any) {
     : []
   const areaNote = areas.length > 0 ? MINUTES_AREA_NOTE(areas) : ''
 
-  const provider = getProvider()
   const result = await provider.chat(
     [
       { role: 'system', content: MINUTES_RULES },

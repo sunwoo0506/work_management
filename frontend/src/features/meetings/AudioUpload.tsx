@@ -235,7 +235,8 @@ export default function AudioUpload() {
           const atMs = Math.round(ranges[i].from * 1000)
 
           try {
-            const text = await transcribeChunk(blob, hint, model)
+            // 구간 길이를 같이 보낸다 — 전사 요금은 길이로 매겨진다(사용량 기록용)
+            const text = await transcribeChunk(blob, hint, model, ranges[i].to - ranges[i].from)
             if (text.trim()) {
               got.set(atMs, text)
               // 구간을 받을 때마다 저장한다 — 중간에 끊겨도 그때까지가 남는다

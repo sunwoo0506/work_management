@@ -1,4 +1,5 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { recordUsage } from '../_shared/usage.ts'
 import { explainFailure } from '../_shared/provider/failure.ts'
 import { checkModel, pickTranscriber } from '../_shared/provider/transcribe/index.ts'
 import { MissingKeyError, TranscribeError } from '../_shared/provider/transcribe/index.ts'
@@ -107,8 +108,38 @@ Deno.serve(async (req) => {
       들어가는데, 구글 한도 문제에 「OpenAI 결제를 확인하세요」라고 띄운 적이
       있다 (2026-09-05). 사용자가 엉뚱한 곳을 뒤지게 된다.
     */
+    /*
+      이 토막이 몇 초짜리인가. **전사 요금은 길이로 매겨진다.**
+      화면이 알고 있으므로(구간을 자른 쪽이 화면이다) 같이 보내 준다.
+      안 보내면 비워 둔다 — 파일 크기로 짐작하면 코덱마다 달라 틀린 값이 남는다.
+    */
+    const seconds = Math.round(Number(form?.get('seconds') ?? 0)) || null
+
     const transcriber = pickTranscriber(model)
-    const result = await transcriber.run({ file, hint, model })
+
+    /*
+      ★ 사용량 기록 (2026-09-08).
+
+      **전사가 이 저장소에서 가장 비싼 길인데 한 줄도 안 남고 있었다.**
+      ai-assist 는 공급자를 감싸서 기록하지만(_shared/usage.ts), 여기는
+      부르는 자리가 이 한 곳뿐이라 감쌀 것도 없이 여기 붙인다.
+
+      실패도 남긴다 — 「이번 달 호출이 왜 이렇게 많지」의 답이
+      **다시 보내기**일 때가 있다 (몰려서 거절당하면 두 번까지 다시 한다).
+    */
+    let result
+    try {
+      result = await transcriber.run({ file, hint, model })
+    } catch (e) {
+      await recordUsage(db, userData.user.id, {
+        feature: '전사',
+        model,
+        audioSec: seconds,
+        ok: false,
+      })
+      throw e
+    }
+    await recordUsage(db, userData.user.id, { feature: '전사', model, audioSec: seconds })
 
     /*
       토막마다의 확신도를 **그대로 넘긴다.** 무엇을 버릴지는 화면이 정한다.

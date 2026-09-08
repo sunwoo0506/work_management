@@ -246,13 +246,23 @@ export async function draftMinutes(v: {
  * 여기서 읽어 붙인다 (transcribeModels.ts). 거르는 자리를 하나로 모은 것과
  * 같은 이유다 — 네 길 중 한 곳에만 붙이면 나머지 세 길이 옛 모델로 돈다.
  *
+ * ── 몇 초짜리인지도 같이 보낸다 (2026-09-08) ─────────────
+ * **전사 요금은 길이로 매겨진다.** 서버는 파일만 봐서는 길이를 모르고,
+ * 크기로 짐작하면 코덱마다 달라 틀린 값이 남는다. 그래서 **아는 쪽이 보낸다.**
+ *
+ * ⚠️ 지금은 **녹음파일 올리기만** 정확한 값을 안다(구간을 초 단위로 잘랐으므로).
+ *    실시간 받아쓰기·다시 받아쓰기는 비워 둔다 — 짐작으로 채우면 틀린 줄 모르고
+ *    지나간다. 사용량 화면이 「길이 미상」으로 따로 세어 보여 준다.
+ *
  * @param hint 이 회의에 나올 사내 용어. 미리 알려 주면 그 표기로 적힌다
  * @param model 이번만 다른 모델로 받아쓰고 싶을 때. 안 주면 화면에서 고른 값
+ * @param seconds 이 토막이 몇 초짜리인가. 사용량 기록에만 쓴다
  */
 export async function transcribeChunk(
   blob: Blob,
   hint?: string,
   model?: string,
+  seconds?: number,
 ): Promise<string> {
   const use = model || readTranscribeModel()
 
@@ -271,6 +281,7 @@ export async function transcribeChunk(
     form.append('file', blob, 'chunk')
     if (hint) form.append('hint', hint)
     form.append('model', use)
+    if (seconds && seconds > 0) form.append('seconds', String(Math.round(seconds)))
 
     const { data, error } = await supabase.functions.invoke('transcribe', { body: form })
 
