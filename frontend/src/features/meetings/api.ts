@@ -261,6 +261,7 @@ export async function draftMinutes(v: {
  * @param onWait 오래 걸릴 때 몇 초째인지 알려 준다
  * @param audioPath 보관함에 이미 올라가 있는 소리의 경로. 주면 **소리를 안 보내고**
  *                  서버가 거기서 가져온다 — 20MB 가 넘는 파일은 요청에 못 싣는다
+ * @param speakers 미리 등록해 둔 목소리. 주면 「화자1」 대신 **이름으로** 적힌다
  */
 export async function transcribeChunk(
   blob: Blob | null,
@@ -270,6 +271,7 @@ export async function transcribeChunk(
   diarize?: boolean,
   onWait?: (sec: number) => void,
   audioPath?: string,
+  speakers?: SpeakerVoice[],
 ): Promise<string> {
   const use = model || readTranscribeModel()
 
@@ -292,6 +294,8 @@ export async function transcribeChunk(
     form.append('model', use)
     if (seconds && seconds > 0) form.append('seconds', String(Math.round(seconds)))
     if (diarize) form.append('diarize', '1')
+    // 등록해 둔 목소리는 **경로만** 넘긴다. 서버가 보관함에서 가져간다
+    if (speakers && speakers.length > 0) form.append('speakers', JSON.stringify(speakers))
 
     const { data, error } = await supabase.functions.invoke('transcribe', { body: form })
 
@@ -626,6 +630,38 @@ export async function loadGlossary(companyId: string): Promise<GlossaryPair[]> {
 const AUDIO_BUCKET = 'meeting-audio'
 
 export type MeetingAudio = Row<'meeting_audio'>
+
+/** 미리 등록해 둔 목소리 한 사람 */
+export type SpeakerVoice = { name: string; path: string }
+
+/**
+ * 목소리 견본을 보관함에 올린다 (2026-09-08).
+ *
+ * 2~10초짜리 짧은 소리다. 회의 소리와 같은 보관함을 쓰되 경로를 갈라 둔다 —
+ * 회의록 화면의 「남은 소리」 목록에 섞이면 안 된다(그 목록은 `meeting_audio`
+ * 표를 보므로, 표에 안 넣으면 안 섞인다).
+ */
+export async function uploadSpeakerVoice(blob: Blob): Promise<string> {
+  const { data: auth } = await supabase.auth.getUser()
+  const userId = auth.user?.id
+  if (!userId) throw new Error('로그인 정보를 읽지 못했습니다.')
+
+  const ext = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm'
+  // 이름을 파일명에 쓰지 않는다 — 실명이 경로에 남는다
+  const path = `${userId}/speakers/${Date.now()}.${ext}`
+  const contentType = (blob.type || 'audio/webm').split(';')[0].trim()
+
+  const { error } = await supabase.storage
+    .from(AUDIO_BUCKET)
+    .upload(path, blob, { contentType })
+  if (error) throw error
+  return path
+}
+
+/** 등록해 둔 목소리를 지운다 */
+export async function deleteSpeakerVoice(path: string): Promise<void> {
+  await supabase.storage.from(AUDIO_BUCKET).remove([path])
+}
 
 /**
  * 소리를 보관함에 올리고 **경로만** 돌려준다 (2026-09-08).

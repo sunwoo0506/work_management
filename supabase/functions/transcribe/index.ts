@@ -1,4 +1,5 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { encodeBase64 } from 'jsr:@std/encoding@1/base64'
 import { recordUsage } from '../_shared/usage.ts'
 import { explainFailure } from '../_shared/provider/failure.ts'
 import { checkModel, pickTranscriber } from '../_shared/provider/transcribe/index.ts'
@@ -160,6 +161,33 @@ Deno.serve(async (req) => {
     */
     const diarize = String(form?.get('diarize') ?? '') === '1'
 
+    /*
+      ★ 미리 등록해 둔 목소리 (2026-09-08).
+
+      화면이 **보관함 경로만** 보낸다. 여기서 내려받아 공급자가 받는 형태로 바꾼다 —
+      소리를 브라우저가 글자로 바꿔 보내면 요청이 그만큼 무거워지고,
+      같은 clip 을 회의마다 다시 올리게 된다.
+
+      ⚠️ 4명까지다. 넘으면 공급자가 거절하므로 여기서 자른다.
+      ⚠️ 하나라도 못 가져오면 **그 사람만 빼고 진행한다.** 목소리 등록은
+         곁다리다 — 이것 때문에 받아쓰기 자체가 실패하면 안 된다.
+    */
+    const speakers: { name: string; dataUrl: string }[] = []
+    try {
+      const raw = String(form?.get('speakers') ?? '')
+      const wanted: { name?: string; path?: string }[] = raw ? JSON.parse(raw) : []
+      for (const w of wanted.slice(0, 4)) {
+        if (!w?.name || !w?.path) continue
+        const { data, error } = await db.storage.from('meeting-audio').download(w.path)
+        if (error || !data) continue
+        const buf = new Uint8Array(await data.arrayBuffer())
+        const type = data.type || 'audio/webm'
+        speakers.push({ name: w.name, dataUrl: `data:${type};base64,${encodeBase64(buf)}` })
+      }
+    } catch {
+      // 형식이 깨졌으면 그냥 등록 없이 진행한다
+    }
+
     const transcriber = pickTranscriber(model)
 
     /*
@@ -174,7 +202,14 @@ Deno.serve(async (req) => {
     */
     let result
     try {
-      result = await transcriber.run({ file: file as File, hint, model, diarize, jobId })
+      result = await transcriber.run({
+        file: file as File,
+        hint,
+        model,
+        diarize,
+        jobId,
+        speakers,
+      })
     } catch (e) {
       if (!jobId) {
         await recordUsage(db, userData.user.id, {

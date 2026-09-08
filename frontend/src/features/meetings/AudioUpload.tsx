@@ -17,9 +17,15 @@ import {
 import { CHUNK_SEC, decodeRisk, decodeToMono, makeChunk, readAudioMeta } from './decodeAudio'
 import type { AudioMeta, Decoded } from './decodeAudio'
 import { chunkRanges } from '../../domain/audio'
+import { useSpeakerVoices } from './useSpeakerVoices'
 import { clock } from '../../domain/transcript'
 import { TranscribeModelPicker } from './TranscribeModelPicker'
-import { readTranscribeModel, writeTranscribeModel } from './transcribeModels'
+import {
+  readTranscribeModel,
+  supportsDiarize,
+  supportsSpeakerNames,
+  writeTranscribeModel,
+} from './transcribeModels'
 
 /**
  * 화자 구분을 켰을 때 **자르지 않고 통째로 보낼 수 있는 길이** (2026-09-08).
@@ -120,10 +126,15 @@ export default function AudioUpload() {
    */
   const [model, setModel] = useState(readTranscribeModel)
   /*
-    화자 구분은 **제미나이만 된다.** 다른 모델을 고르면 칸을 잠그고 이유를 밝힌다 —
-    켜 놓고 아무 일도 안 일어나면 「됐는데 왜 안 나오지」가 된다.
+    화자 구분이 되는 모델인지. 판정은 transcribeModels.ts 한 곳에서만 한다 —
+    되는 모델이 둘이 됐고, 흩어져 있으면 한 곳을 빠뜨린다.
+    안 되는 모델을 고르면 칸을 잠그고 이유를 밝힌다 — 켜 놓고 아무 일도
+    안 일어나면 「됐는데 왜 안 나오지」가 된다.
   */
-  const canDiarize = model.startsWith('gemini')
+  const canDiarize = supportsDiarize(model)
+  /** 등록해 둔 목소리 — 이름으로 적히게 한다. 되는 모델일 때만 넘긴다 */
+  const voices = useSpeakerVoices()
+  const useNames = supportsSpeakerNames(model) && voices.length > 0
   /** 사람이 멈추라고 했나. 지금 구간까지만 하고 멈춘다 */
   const stopRef = useRef(false)
 
@@ -305,6 +316,8 @@ export default function AudioUpload() {
               whole ? (sec) => setWaited(sec) : undefined,
               // 통째로 보낼 때는 소리를 요청에 안 싣는다 — 20MB 를 넘어 막힌다
               whole ? wholePath : undefined,
+              // 등록해 둔 목소리가 있으면 「화자1」 대신 이름으로 적힌다
+              useNames ? voices : undefined,
             )
             if (text.trim()) {
               got.set(atMs, text)
@@ -744,7 +757,28 @@ export default function AudioUpload() {
                 화자 구분 받아쓰기
                 <span className="block text-caption text-ink-mute leading-relaxed mt-0.5">
                   {!canDiarize ? (
-                    <>이 기능은 제미나이에서만 됩니다. 위에서 받아쓰기 모델을 바꿔 주세요.</>
+                    <>
+                      이 모델은 화자를 가르지 못합니다. 위에서{' '}
+                      <strong className="font-semibold">제미나이</strong> 또는{' '}
+                      <strong className="font-semibold">GPT 화자 구분</strong>으로 바꿔 주세요.
+                    </>
+                  ) : useNames ? (
+                    <>
+                      <strong className="font-semibold">
+                        등록해 두신 목소리({voices.map((v) => v.name).join(' · ')})는 이름으로
+                        적힙니다.
+                      </strong>{' '}
+                      나머지는 「화자1」처럼 번호로 나옵니다. 이름은 구간마다 새로 매겨지지
+                      않으므로 <strong className="font-semibold">30분이 넘어도 안 흔들립니다.</strong>
+                    </>
+                  ) : supportsSpeakerNames(model) ? (
+                    <>
+                      「화자1: …」처럼 말한 사람별로 줄이 나뉩니다.{' '}
+                      <strong className="font-semibold">
+                        「기준 › 업무영역·용어 › 목소리 등록」에 목소리를 넣어 두시면 번호 대신
+                        이름으로 적힙니다.
+                      </strong>
+                    </>
                   ) : !meta || !meta.ok || meta.durationSec <= WHOLE_MAX_SEC ? (
                     <>
                       「화자1: …」처럼 말한 사람별로 줄이 나뉩니다.{' '}

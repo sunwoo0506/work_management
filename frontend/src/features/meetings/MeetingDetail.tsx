@@ -8,7 +8,13 @@ import type { ActionItem, MinutesDoc } from '../../domain/minutes'
 import MinutesForm from './MinutesForm'
 import { useCompanyId } from '../companies/useCompany'
 import { TranscribeModelPicker } from './TranscribeModelPicker'
-import { readTranscribeModel, writeTranscribeModel } from './transcribeModels'
+import {
+  readTranscribeModel,
+  supportsDiarize,
+  supportsSpeakerNames,
+  writeTranscribeModel,
+} from './transcribeModels'
+import { useSpeakerVoices } from './useSpeakerVoices'
 import {
   deleteMeeting,
   deleteMeetingAudio,
@@ -235,6 +241,9 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
    */
   const [model, setModel] = useState(readTranscribeModel)
 
+  /** 등록해 둔 목소리 — 이름으로 적히게 한다 */
+  const voices = useSpeakerVoices()
+
   /** 다시 받아쓰는 중 몇 초째인가 — 통째로 보내면 몇 분 걸린다 */
   const [redoWait, setRedoWait] = useState(0)
 
@@ -265,11 +274,13 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
         hint,
         model,
         undefined,
-        // 화자 구분은 제미나이만 된다. 아니면 조용히 꺼진다
-        model.startsWith('gemini'),
+        // 화자 구분이 되는 모델일 때만. 아니면 조용히 꺼진다
+        supportsDiarize(model),
         (sec) => setRedoWait(sec),
         // 소리를 안 싣고 **보관함 경로만** 넘긴다
         row.path,
+        // 등록해 둔 목소리가 있으면 「화자1」 대신 이름으로 적힌다
+        supportsSpeakerNames(model) && voices.length > 0 ? voices : undefined,
       )
       if (!got.trim()) {
         throw new Error('변환 결과가 비어 있습니다. 음성이 너무 작거나 잡음이 많을 수 있습니다.')
@@ -413,7 +424,7 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
           <p className="text-body font-semibold">변환하지 못한 음성 {pendingAudio.length}건</p>
           <p className="text-caption text-ink-mute mt-1 leading-relaxed">
             「다시 변환」을 누르면 <strong className="font-semibold">전사문의 해당 시점에 삽입됩니다.</strong>{' '}
-            {model.startsWith('gemini') && (
+            {supportsDiarize(model) && (
               <>
                 제미나이로 다시 변환하면{' '}
                 <strong className="font-semibold">화자 구분(화자1: …)이 함께 들어갑니다.</strong>{' '}

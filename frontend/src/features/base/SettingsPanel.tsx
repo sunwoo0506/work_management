@@ -7,6 +7,7 @@ import { PillButton, TextInput } from '../../components/Field'
 import { useCompanyId } from '../companies/useCompany'
 import PasswordCard from '../auth/PasswordCard'
 import AiUsageCard from './AiUsageCard'
+import SpeakerVoices from './SpeakerVoices'
 
 /**
  * 업체별 키-값을 고치는 자리.
@@ -110,6 +111,12 @@ export function StandardsPanel() {
           onChange={(next) => save.mutate({ key: 'glossary', value: next })}
         />
       </Card>
+
+      {/*
+        목소리도 「기준」이다 — 누가 참석하는 사람인지는 회의마다 바뀌지 않는다.
+        그리고 사내 용어집 바로 아래가 맞다: 둘 다 **받아쓰기를 정확하게 만드는 것**이다.
+      */}
+      <SpeakerVoices />
     </div>
   )
 }

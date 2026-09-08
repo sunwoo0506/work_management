@@ -23,11 +23,21 @@ function givesSegments(model: string): boolean {
   return model.startsWith('whisper')
 }
 
+/**
+ * 화자를 갈라 주는 모델인가 (2026-09-08).
+ *
+ * OpenAI 쪽에서 이걸 하는 것은 **화자 구분 전용 모델 하나뿐**이다.
+ * whisper 나 일반 gpt-transcribe 에 갈라 달라고 하면 그냥 무시되거나 거절당한다.
+ */
+function canDiarize(model: string): boolean {
+  return model.includes('diarize')
+}
+
 export function createOpenAITranscriber(): Transcriber {
   return {
     name: 'openai',
 
-    async run({ file, hint, model }: TranscribeInput): Promise<TranscribeResult> {
+    async run({ file, hint, model, diarize, speakers }: TranscribeInput): Promise<TranscribeResult> {
       const key = Deno.env.get('OPENAI_API_KEY')
       if (!key) {
         throw new MissingKeyError(
@@ -54,7 +64,31 @@ export function createOpenAITranscriber(): Transcriber {
         판단은 여기서 하지 않고 **화면 쪽 순수 계산에 맡긴다**(domain/hallucination.ts).
         여기는 Deno 로 돌아 시험을 못 붙이는 자리다 — 판단이 들어가면 아무도 못 고친다.
       */
-      out.append('response_format', verbose ? 'verbose_json' : 'json')
+      /*
+        화자를 갈라 달라고 했고 그게 되는 모델이면 **전용 형식**으로 받는다.
+        그러면 답이 「누가 말했나 + 무슨 말」 토막들로 온다.
+      */
+      const wantSpeakers = diarize === true && canDiarize(model)
+      out.append(
+        'response_format',
+        wantSpeakers ? 'diarized_json' : verbose ? 'verbose_json' : 'json',
+      )
+
+      /*
+        ★ 목소리를 미리 등록해 두면 **이름으로 적힌다** (2026-09-08).
+
+        등록이 없으면 「A」·「B」 같은 글자로 나온다. 등록해 두면 그 자리에
+        「대표이사」가 그대로 들어간다. 그러면 구간이 갈려도 **이름은 안 흔들린다** —
+        번호와 달리 이름은 구간마다 새로 매겨지지 않기 때문이다.
+
+        ⚠️ 4명까지다. 넘으면 거절당하므로 여기서 잘라 보낸다.
+      */
+      if (wantSpeakers && speakers && speakers.length > 0) {
+        for (const sp of speakers.slice(0, 4)) {
+          out.append('known_speaker_names[]', sp.name)
+          out.append('known_speaker_references[]', sp.dataUrl)
+        }
+      }
 
       /*
         ⚠️ 「지어내기」를 최대한 줄인다 (2026-08-19).
@@ -110,7 +144,39 @@ export function createOpenAITranscriber(): Transcriber {
           }))
         : []
 
-      return { text: String(body?.text ?? '').trim(), segments, model }
+      /*
+        화자별로 온 답은 **「이름: 말」 줄로 묶어** 돌려준다.
+        제미나이 쪽과 **같은 모양**으로 맞춘다 — 그래야 회의록을 만드는 쪽이
+        어느 모델로 받아썼는지 몰라도 된다 (어댑터를 둔 이유).
+
+        묶지 못하면 통짜 글로 되돌아간다. 화자 표시를 못 얻었다고
+        받아쓴 글까지 잃으면 안 된다.
+      */
+      const whole = String(body?.text ?? '').trim()
+      if (wantSpeakers) {
+        const lines: string[] = []
+        let who = ''
+        let buf: string[] = []
+        const flush = () => {
+          if (buf.length === 0) return
+          lines.push(`${who || '화자?'}: ${buf.join(' ').replace(/\s+/g, ' ').trim()}`)
+          buf = []
+        }
+        for (const seg of body?.segments ?? []) {
+          const text = String(seg?.text ?? '').trim()
+          if (!text) continue
+          const speaker = String(seg?.speaker ?? '')
+          if (speaker !== who) {
+            flush()
+            who = speaker
+          }
+          buf.push(text)
+        }
+        flush()
+        if (lines.length > 0) return { text: lines.join('\n'), segments: [], model }
+      }
+
+      return { text: whole, segments, model }
     },
   }
 }
