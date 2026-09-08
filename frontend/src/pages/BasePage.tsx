@@ -4,11 +4,16 @@ import DirectiveList from '../features/directives/DirectiveList'
 import { useDirectives } from '../features/directives/hooks'
 import HandoverList from '../features/base/HandoverList'
 import ContactList from '../features/base/ContactList'
-import SettingsPanel from '../features/base/SettingsPanel'
 import TaskDetail from '../features/tasks/TaskDetail'
 import { useTasks } from '../features/tasks/hooks'
 
-const VIEWS = ['지시사항', '인수인계', '연락처', '설정'] as const
+/*
+  「설정」은 2026-09-08 에 별도 탭(/settings)으로 떼어냈다.
+  여기 남은 셋은 **일하다가 들춰 보는 자료**이고, 설정은 **툴이 어떻게 동작할지
+  정하는 곳**이라 성격이 다르다. 자주 여는 것과 어쩌다 여는 것을 한 페이지에
+  묶어 두면 어쩌다 여는 쪽을 못 찾는다 — 실제로 못 찾으셨다.
+*/
+const VIEWS = ['지시사항', '인수인계', '연락처'] as const
 type View = (typeof VIEWS)[number]
 
 export default function BasePage() {
@@ -24,7 +29,7 @@ export default function BasePage() {
     <div className="max-w-[1120px]">
       <PageHeader
         title="기준"
-        description="바뀌지 않는 것들. 지시사항·인수인계·연락처·설정이 여기 모입니다."
+        description="바뀌지 않는 것들. 지시사항·인수인계·연락처가 여기 모입니다."
       />
 
       <div className="flex gap-1.5 mt-5">
@@ -74,7 +79,6 @@ export default function BasePage() {
         )}
         {view === '인수인계' && <HandoverList />}
         {view === '연락처' && <ContactList />}
-        {view === '설정' && <SettingsPanel />}
       </div>
 
       {open && <TaskDetail task={open} onClose={() => setOpenId(null)} />}

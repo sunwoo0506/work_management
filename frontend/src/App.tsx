@@ -6,6 +6,7 @@ import ProcedurePage from './pages/ProcedurePage'
 import PlanPage from './pages/PlanPage'
 import RecordPage from './pages/RecordPage'
 import BasePage from './pages/BasePage'
+import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/plan" element={<PlanPage />} />
           <Route path="/record" element={<RecordPage />} />
           <Route path="/base" element={<BasePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/today" replace />} />
         </Routes>
       </main>

@@ -126,6 +126,68 @@ http://localhost:5173/**
 
 `--branch=main` 을 빼면 **본 주소가 아니라 미리보기 주소로만** 올라갑니다.
 `--commit-dirty=true` 는 "커밋 안 한 변경이 있어도 그냥 올려라"입니다.
+### ⚠️ 두 가지가 따로 올라갑니다 — 하나만 올리면 반쪽입니다 *(2026-09-08 추가)*
+
+| 무엇 | 올리는 법 | 이걸 안 올리면 |
+|---|---|---|
+| **화면** | 위의 `wrangler pages deploy` | 고친 화면이 **안 보입니다** |
+| **서버 함수**(AI·받아쓰기) | `npx supabase functions deploy <이름>` | 화면은 새 건데 **서버가 옛날 것**입니다 |
+| **저장 공간**(표) | `npx supabase db push` | 새 칸이 없어 오류가 납니다 |
+
+**`git push` 로는 아무것도 안 올라갑니다.** 이 배포는 깃 연결이 아니라
+「내 컴퓨터에서 빌드해 결과물만 올리는 방식」이기 때문입니다.
+
+> 2026-09-08 에 실제로 그랬습니다. 서버 함수만 올리고 화면을 안 올려서
+> *"설정 안에 AI 사용량 부분이 없다"* 는 말씀을 들었습니다. 코드는 다 있었는데
+> **올라간 화면이 옛날 것**이었습니다.
+
+---
+
+## ★ 서버 함수는 **웹 편집기 말고 CLI 로** 올립니다 *(2026-09-08 추가)*
+
+Supabase 대시보드에도 함수를 고치는 편집기가 있습니다. **거기서 배포하면 깨집니다.**
+
+```
+Failed to deploy edge function: Failed to bundle the function
+(reason: Module not found ".../_shared/usage.ts")
+```
+
+**왜 그런가** — 이 저장소의 함수들은 여러 함수가 같이 쓰는 코드를
+`supabase/functions/_shared/` 에 모아 뒀습니다. 그런데 그 폴더는
+**함수 폴더 바깥**에 있습니다.
+
+```
+supabase/functions/
+├── _shared/          ← 여기는 웹 편집기에 안 보입니다
+│   ├── usage.ts
+│   └── provider/
+├── ai-assist/        ← 웹 편집기는 이 안만 압니다
+└── transcribe/
+```
+
+웹 편집기는 **그 함수 폴더 안만** 압니다. CLI 는 `import` 를 따라가며
+필요한 파일을 **스스로 찾아 올립니다.**
+
+```
+Uploading asset (ai-assist): supabase/functions/ai-assist/index.ts
+Uploading asset (ai-assist): supabase/functions/_shared/provider/index.ts
+Uploading asset (ai-assist): supabase/functions/_shared/usage.ts   ← CLI 만 이걸 올립니다
+```
+
+**함수 12개가 전부 `_shared/` 를 씁니다.** 그러니 예외 없이 CLI 로 올립니다.
+
+```
+npx supabase functions deploy ai-assist
+npx supabase functions deploy transcribe
+```
+
+> ⚠️ 웹 편집기에서 급하게 한 줄 고치는 것도 하지 않는 편이 낫습니다.
+> 저장소와 서버가 달라지고, **다음 CLI 배포 때 조용히 덮어써집니다.**
+> 그러면 「분명히 고쳤는데 왜 안 되지」가 됩니다.
+
+> `WARNING: Docker is not running` 은 무시해도 됩니다. 로컬 스택용 경고이고,
+> 배포는 클라우드로 바로 갑니다.
+
 
 ---
 
