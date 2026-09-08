@@ -45,7 +45,7 @@ export default function AudioUpload() {
   const [place, setPlace] = useState('')
   const [sensitive, setSensitive] = useState(false)
   /**
-   * 누가 말했는지 갈라서 받아쓸까 (2026-09-08).
+   * 화자 구분 받아쓰기를 켤까 (2026-09-08).
    *
    * 기본은 **켜짐**이다 — 화자 구분이 없으면 회의록의 조치사항 담당을 알 수 없다.
    * 「제가 하겠습니다」의 「제가」가 누구인지 글만 봐서는 모른다.
@@ -670,7 +670,7 @@ export default function AudioUpload() {
                 className="accent-action mt-1.5 shrink-0"
               />
               <span className={canDiarize ? '' : 'text-ink-mute'}>
-                누가 말했는지 갈라서 받아쓰기
+                화자 구분 받아쓰기
                 <span className="block text-caption text-ink-mute leading-relaxed mt-0.5">
                   {canDiarize ? (
                     <>
