@@ -42,6 +42,17 @@ export type TranscribeInput = {
   hint: string
   /** 사용자가 고른 모델 이름 */
   model: string
+  /**
+   * 누가 말했는지 갈라서 받아쓸까 (2026-09-08).
+   *
+   * ⚠️ **제미나이만 된다.** whisper 계열은 이 기능이 없어 그냥 무시한다 —
+   *    거절하지 않는다. 모델을 바꿨다고 받아쓰기가 통째로 실패하면 안 된다.
+   *
+   * ⚠️ **구간마다 따로 매겨진다.** 5분씩 잘라 보내므로 3번 구간의 「화자1」과
+   *    4번 구간의 「화자1」이 같은 사람이라는 보장이 없다. 회의록을 만드는
+   *    AI 에게 그 사실을 알려 준다 (prompt.ts 의 MINE_RULES).
+   */
+  diarize?: boolean
 }
 
 export interface Transcriber {

@@ -257,12 +257,14 @@ export async function draftMinutes(v: {
  * @param hint 이 회의에 나올 사내 용어. 미리 알려 주면 그 표기로 적힌다
  * @param model 이번만 다른 모델로 받아쓰고 싶을 때. 안 주면 화면에서 고른 값
  * @param seconds 이 토막이 몇 초짜리인가. 사용량 기록에만 쓴다
+ * @param diarize 누가 말했는지 갈라서 받아쓸까. **제미나이만 된다**
  */
 export async function transcribeChunk(
   blob: Blob,
   hint?: string,
   model?: string,
   seconds?: number,
+  diarize?: boolean,
 ): Promise<string> {
   const use = model || readTranscribeModel()
 
@@ -282,6 +284,7 @@ export async function transcribeChunk(
     if (hint) form.append('hint', hint)
     form.append('model', use)
     if (seconds && seconds > 0) form.append('seconds', String(Math.round(seconds)))
+    if (diarize) form.append('diarize', '1')
 
     const { data, error } = await supabase.functions.invoke('transcribe', { body: form })
 

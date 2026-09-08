@@ -44,6 +44,14 @@ export default function AudioUpload() {
   const [attendees, setAttendees] = useState('')
   const [place, setPlace] = useState('')
   const [sensitive, setSensitive] = useState(false)
+  /**
+   * 누가 말했는지 갈라서 받아쓸까 (2026-09-08).
+   *
+   * 기본은 **켜짐**이다 — 화자 구분이 없으면 회의록의 조치사항 담당을 알 수 없다.
+   * 「제가 하겠습니다」의 「제가」가 누구인지 글만 봐서는 모른다.
+   */
+  const [diarize, setDiarize] = useState(true)
+
   /** 회의 중 직접 적은 메모. 전사문과 섞지 않는다 */
   const [myNotes, setMyNotes] = useState('')
   /**
@@ -94,6 +102,11 @@ export default function AudioUpload() {
    * 가장 쉬운 화면이다. 소리가 그대로 남아 있어 몇 번이든 다시 돌릴 수 있다.
    */
   const [model, setModel] = useState(readTranscribeModel)
+  /*
+    화자 구분은 **제미나이만 된다.** 다른 모델을 고르면 칸을 잠그고 이유를 밝힌다 —
+    켜 놓고 아무 일도 안 일어나면 「됐는데 왜 안 나오지」가 된다.
+  */
+  const canDiarize = model.startsWith('gemini')
   /** 사람이 멈추라고 했나. 지금 구간까지만 하고 멈춘다 */
   const stopRef = useRef(false)
 
@@ -236,7 +249,13 @@ export default function AudioUpload() {
 
           try {
             // 구간 길이를 같이 보낸다 — 전사 요금은 길이로 매겨진다(사용량 기록용)
-            const text = await transcribeChunk(blob, hint, model, ranges[i].to - ranges[i].from)
+            const text = await transcribeChunk(
+              blob,
+              hint,
+              model,
+              ranges[i].to - ranges[i].from,
+              diarize && canDiarize,
+            )
             if (text.trim()) {
               got.set(atMs, text)
               // 구간을 받을 때마다 저장한다 — 중간에 끊겨도 그때까지가 남는다
@@ -641,6 +660,34 @@ export default function AudioUpload() {
                 placeholder="예: 본사 회의실 / Zoom"
               />
             </Field>
+
+            <label className="flex items-start gap-2 text-body pt-1">
+              <input
+                type="checkbox"
+                checked={diarize && canDiarize}
+                disabled={!canDiarize}
+                onChange={(e) => setDiarize(e.target.checked)}
+                className="accent-action mt-1.5 shrink-0"
+              />
+              <span className={canDiarize ? '' : 'text-ink-mute'}>
+                누가 말했는지 갈라서 받아쓰기
+                <span className="block text-caption text-ink-mute leading-relaxed mt-0.5">
+                  {canDiarize ? (
+                    <>
+                      「화자1: …」처럼 말한 사람별로 줄이 나뉩니다.{' '}
+                      <strong className="font-semibold">
+                        번호는 구간(5분)마다 새로 매겨집니다
+                      </strong>{' '}
+                      — 3구간의 화자1과 4구간의 화자1이 같은 사람이라는 보장은 없습니다.
+                      회의록을 만들 때 참석자 목록과 대조해 AI 가 추정하고, 확신이 없으면
+                      「확인 필요」에 적습니다.
+                    </>
+                  ) : (
+                    <>이 기능은 제미나이에서만 됩니다. 위에서 받아쓰기 모델을 바꿔 주세요.</>
+                  )}
+                </span>
+              </span>
+            </label>
 
             <label className="flex items-start gap-2 text-body pt-1">
               <input

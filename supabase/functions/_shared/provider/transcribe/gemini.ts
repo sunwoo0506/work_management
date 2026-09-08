@@ -43,7 +43,7 @@ export function createGeminiTranscriber(): Transcriber {
   return {
     name: 'gemini',
 
-    async run({ file, hint, model }: TranscribeInput): Promise<TranscribeResult> {
+    async run({ file, hint, model, diarize }: TranscribeInput): Promise<TranscribeResult> {
       const key = Deno.env.get('GEMINI_API_KEY')
       if (!key) {
         throw new MissingKeyError(
@@ -76,6 +76,20 @@ export function createGeminiTranscriber(): Transcriber {
             // 영어로 잘못 잡는 일이 있다 — 회의는 늘 한국어다
             language_codes: ['ko-KR'],
             ...(hint ? { custom_vocabulary: vocabulary(hint) } : {}),
+            /*
+              ★ 화자 구분 (2026-09-08).
+
+              「누가 말했는지」가 없으면 회의록을 만들 때 **조치사항의 담당을
+              알 수 없다.** 「제가 하겠습니다」의 「제가」가 누구인지 글만 봐서는
+              모른다. 실제로 그 때문에 담당 칸이 비었다.
+
+              ⚠️ **verbatim 을 같이 켜야 한다.** 기본값인 다듬어 주는 모드
+              (smart)와는 같이 못 쓴다 — 공급자 제약이다. 그래서 말버릇("어",
+              "그러니까")이 그대로 남는데, 그건 다음 단계(채굴)가 걷어낸다.
+            */
+            ...(diarize
+              ? { mode: { type: 'verbatim', diarization_mode: 'speaker' } }
+              : {}),
           },
         },
       }
@@ -97,7 +111,13 @@ export function createGeminiTranscriber(): Transcriber {
         if (!json) break
       }
 
-      return { text: readText(json), segments: [], model }
+      /*
+        화자를 갈라 달라고 했으면 **낱말 단위로 온 화자 표시**를 줄로 묶는다.
+        묶지 못하면(공급자가 안 줬거나 형태가 바뀌었으면) 평소 글로 되돌아간다 —
+        화자 표시를 못 얻었다고 받아쓴 글까지 잃으면 안 된다.
+      */
+      const text = diarize ? (bySpeaker(json) || readText(json)) : readText(json)
+      return { text, segments: [], model }
     },
   }
 }
@@ -136,6 +156,70 @@ function readText(json: any): string {
     }
   }
   return parts.join(' ').trim()
+}
+
+/**
+ * 낱말마다 붙어 온 화자 표시를 **말한 사람별 줄**로 묶는다.
+ *
+ * 공급자는 이렇게 준다 — 낱말 하나하나에 누가 말했는지가 붙어 있다.
+ *
+ *   { type: 'word_info', text: '안녕하세요', speaker: 'spk_1', ... }
+ *
+ * 그대로 두면 낱말 목록이라 읽을 수 없다. **화자가 바뀌는 자리에서 끊어**
+ * 「화자1: …」 꼴로 묶는다.
+ *
+ * ⚠️ **번호는 이 구간 안에서만 유효하다.** 5분씩 잘라 보내므로 3번 구간의
+ *    「화자1」과 4번 구간의 「화자1」이 같은 사람이라는 보장이 없다.
+ *    그 사실은 회의록을 만드는 AI 에게 따로 알려 준다 (prompt.ts).
+ *
+ * 못 묶으면 빈 글을 돌려준다 — 부르는 쪽이 평소 글로 되돌아간다.
+ */
+function bySpeaker(json: any): string {
+  const words: { speaker: string; text: string }[] = []
+
+  for (const step of json?.steps ?? []) {
+    for (const c of step?.content ?? []) {
+      for (const a of c?.annotations ?? []) {
+        if (a?.type !== 'word_info') continue
+        const text = String(a?.text ?? '')
+        if (!text.trim()) continue
+        words.push({ speaker: String(a?.speaker ?? ''), text })
+      }
+    }
+  }
+  if (words.length === 0) return ''
+
+  /*
+    「spk_1」 을 「화자1」 로 바꾼다. 나온 순서대로 1번부터 매긴다 —
+    공급자가 주는 번호가 1부터 시작한다는 보장이 없고, 건너뛰기도 한다.
+  */
+  const seen = new Map<string, number>()
+  const label = (raw: string) => {
+    if (!raw) return '화자?'
+    if (!seen.has(raw)) seen.set(raw, seen.size + 1)
+    return `화자${seen.get(raw)}`
+  }
+
+  const lines: string[] = []
+  let who = ''
+  let buf: string[] = []
+
+  const flush = () => {
+    if (buf.length === 0) return
+    lines.push(`${label(who)}: ${buf.join(' ').replace(/\s+/g, ' ').trim()}`)
+    buf = []
+  }
+
+  for (const w of words) {
+    if (w.speaker !== who) {
+      flush()
+      who = w.speaker
+    }
+    buf.push(w.text)
+  }
+  flush()
+
+  return lines.join('\n')
 }
 
 /**

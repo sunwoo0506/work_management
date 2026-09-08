@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Row } from '../../lib/supabase'
 import { Field, PillButton, TextArea, TextInput } from '../../components/Field'
 import { clock, hhmm, mergeIntoTranscript, timeRange, usedGlossary } from '../../domain/transcript'
-import { EMPTY_MINUTES, decisionsOf, minutesToText } from '../../domain/minutes'
+import { EMPTY_MINUTES, decisionsOf, hasContent, minutesToText } from '../../domain/minutes'
 import type { ActionItem, MinutesDoc } from '../../domain/minutes'
 import MinutesForm from './MinutesForm'
 import { useCompanyId } from '../companies/useCompany'
@@ -24,6 +24,7 @@ import {
 import type { MeetingAudio } from './api'
 import { useRegisteredAreas } from '../areas/useAreaOptions'
 import { printMinutes } from './printMinutes'
+import { downloadWord } from './wordMinutes'
 
 type Meeting = Row<'meetings'>
 
@@ -167,7 +168,27 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
         메모에는 있는데 회의록에 없으면 2걸음(구성)이 버린 것이고,
         메모에도 없으면 1걸음(채굴)이 못 들은 것이다. 고칠 프롬프트가 갈린다.
       */
+      /*
+        ★ 초안을 **본문(minutes)에도 바로 굳힌다** (2026-09-08 고침).
+
+        ── 무엇이 문제였나 ──────────────────────────────────
+        전에는 `aiDraft` 만 저장했다. 화면의 회의록 본문은 **저장 안 된 화면 상태**로만
+        살아 있었다. 그래서 초안을 만들고 **저장을 안 누른 채** 화면을 옮기거나
+        새로고침하면 본문이 통째로 사라졌다.
+
+        더 나빴던 것은 **그게 티가 안 났다는 점**이다. 파일(.md)·PDF 로 내보내면
+        머리말(회의명·일시)만 있는 **껍데기 파일이 멀쩡히 만들어졌다.** 사용자는
+        「초안이 완성됐다」고 들었는데 파일을 열면 비어 있었다.
+
+        ── 왜 이렇게 고치나 ─────────────────────────────────
+        AI 가 만든 것은 **초안**이고 확정은 사람이 한다 — 그 원칙은 그대로다.
+        다만 `minutes` 는 「확정본」이 아니라 **사람이 고치는 작업본**이다.
+        초안이 거기 들어가 있어야 고칠 수 있다. 확정은 그 뒤 사람이 손보고
+        저장하는 것으로 남는다. `aiDraft` 에 원본이 따로 남으므로
+        **「AI 가 뭘 놓쳤나」를 견주는 것도 그대로 된다.**
+      */
       await updateMeeting(meeting.id, {
+        minutes: reply.doc,
         aiDraft: {
           text: reply.text,
           minutes: reply.doc as never,
@@ -175,7 +196,11 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
           mined: reply.mined || undefined,
         },
       })
-      setNote('초안을 만들었습니다. 아래에서 고친 뒤 저장하세요.')
+      setNote(
+        hasContent(reply.doc)
+          ? '초안을 만들었습니다. 아래에서 고친 뒤 저장하세요.'
+          : '⚠️ AI 가 답을 줬지만 양식으로 나누지 못했습니다. 아래 「AI 원본」을 확인해 주세요.',
+      )
       void qc.invalidateQueries({ queryKey: ['meetings'] })
     },
     onSettled: () => setPart(null),
@@ -569,7 +594,19 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
         <PillButton
           type="button"
           variant="ghost"
-          onClick={() => downloadText(readable(), `${meeting.met_on}_${meeting.title}_회의록`)}
+          onClick={() => {
+            /*
+              ★ 빈 회의록으로 파일을 만들지 않는다 (2026-09-08).
+              전에는 본문이 비어 있어도 머리말만 든 **껍데기 파일**이 멀쩡히 만들어졌다.
+              파일이 만들어지면 사람은 「됐다」고 여기고 열어 보지 않는다.
+              **안 만들어지는 편이 낫다** — 대신 왜 비었는지 말해 준다.
+            */
+            if (!hasContent(doc)) {
+              setNote('회의록 본문이 비어 있어 파일을 만들지 않았습니다. 먼저 AI 초안을 만들거나 직접 채워 주세요.')
+              return
+            }
+            downloadText(readable(), `${meeting.met_on}_${meeting.title}_회의록`)
+          }}
         >
           파일(.md)
         </PillButton>
@@ -578,6 +615,33 @@ export default function MeetingDetail({ meeting }: { meeting: Meeting }) {
           type="button"
           variant="ghost"
           onClick={() => {
+            if (!hasContent(doc)) {
+              setNote('회의록 본문이 비어 있어 파일을 만들지 않았습니다. 먼저 AI 초안을 만들거나 직접 채워 주세요.')
+              return
+            }
+            downloadWord(doc, {
+              title: meeting.title,
+              metOn: meeting.met_on,
+              place: meeting.place,
+              attendees: meeting.attendees,
+              writer: meeting.writer,
+              startedAt: meeting.started_at,
+              endedAt: meeting.ended_at,
+            })
+            setNote('워드 파일을 내려받았습니다.')
+          }}
+        >
+          워드(.doc)
+        </PillButton>
+
+        <PillButton
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            if (!hasContent(doc)) {
+              setNote('회의록 본문이 비어 있습니다. 먼저 AI 초안을 만들거나 직접 채워 주세요.')
+              return
+            }
             const ok = printMinutes(doc, {
               title: meeting.title,
               metOn: meeting.met_on,

@@ -115,6 +115,13 @@ Deno.serve(async (req) => {
     */
     const seconds = Math.round(Number(form?.get('seconds') ?? 0)) || null
 
+    /*
+      누가 말했는지 갈라서 받아쓸까 (2026-09-08).
+      제미나이만 되고, 나머지 모델은 조용히 무시한다 — 모델을 바꿨다고
+      받아쓰기가 통째로 실패하면 안 된다.
+    */
+    const diarize = String(form?.get('diarize') ?? '') === '1'
+
     const transcriber = pickTranscriber(model)
 
     /*
@@ -129,7 +136,7 @@ Deno.serve(async (req) => {
     */
     let result
     try {
-      result = await transcriber.run({ file, hint, model })
+      result = await transcriber.run({ file, hint, model, diarize })
     } catch (e) {
       await recordUsage(db, userData.user.id, {
         feature: '전사',
